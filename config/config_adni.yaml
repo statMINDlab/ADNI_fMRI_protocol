@@ -8,21 +8,22 @@ project:
 
 adni:
   phases:
-    include: ["GO", "2", "3"]      # ADNI phases to include
-    exclude: ["1", "4"]           # ADNI 1 (no rs-fMRI) & 4 (not yet supported in Clinica)
-  modalities: ["T1w", "BOLD", "T2w"]
-  collection_csv: "/path/to/LONI/ADNI_image_collection.csv"
-  study_files_dir: "/path/to/LONI/ADNI_StudyFiles"
-  # optional: file with diagnosis/site/etc. that you use later
-  participants_tsv: "/path/to/study_files/ADNIMERGE.csv"
+    include: ["GO","1", "2", "3"]      # ADNI phases to include
+    exclude: ["4"]           #  4 (not yet supported in Clinica)
+  modalities: ["T1w", "BOLD", "T2w","FLAIR", "DWI"]  ## Andrea note: unclear what these labels correspond to. 
+  collection_csv: "/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/ADNI_go-3_MRI-fMRI-DTI_collection_2025-12-23.csv"
+
+  # study_files_dir: "/path/to/LONI/ADNI_StudyFiles"  ## Andrea note: unclear if needed. What are study files?
+  # # optional: file with diagnosis/site/etc. that you use later
+  # participants_tsv: "/path/to/study_files/ADNIMERGE.csv"
 
 paths:
-  project_root: "/path/to/ADNI_fMRI_protocol"        # root of this repo on your system
+  project_root: "/N/project/cfn-rady/andrea-dev/ADNI/ADNI_fMRI_protocol"        # root of this repo on your system
 
   # Step 2–3: raw downloads & organized DICOMs
-  raw_zip_dir: "/path/to/adni/raw_zips"              # Step 2 output (zip files from LONI)
-  raw_metadata_dir: "/path/to/adni/raw_metadata"     # CSV/URL lists from LONI
-  raw_dicom_dir: "/path/to/adni/dicom_unzipped"      # Step 3 unzipped tree
+  raw_zip_dir: "/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/image_data"       # Step 2 output (zip files from LONI)
+  raw_metadata_dir: "/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/meta_data"     # CSV/URL lists from LONI
+  raw_dicom_dir: "/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/image_data/ADNI"      # Step 3 unzipped tree
 
   # Step 4: Clinica BIDS conversion
   clinica_bids_dir: "/path/to/adni/clinica_bids"     # BIDS output from Clinica
