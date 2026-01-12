@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 #SBATCH --partition=general
-#SBATCH --account=r01313
+#SBATCH --account=r00240
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=5:00:00
 #SBATCH --mem=90G
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=saiwolf@iu.edu
-#SBATCH --job-name=ADNI_clinica
-#SBATCH -o cl-ADNI-%j.out-%N
-#SBATCH -e cl-ADNI-%j.err-%N
+#SBATCH --mail-type=fail
+#SBATCH --mail-user=aiavenak@iu.edu
+#SBATCH --job-name=adni2bids
+#SBATCH -o ADNI-subID-%j.out-%N
+#SBATCH -e ADNI-subID-%j.err-%N
 
 # * Environment
-base="/N/project/statadni"
-ddir="${base}/ImagingData/dicomUnzipped/"
-odir="${base}BIDS/"
-cdir="${base}/ClinicalData"
-sdir="${base}/Scripts/Clinica/"
+base="/N/project/cfn-rady/andrea-dev/ADNI"
+ddir="${base}/LONI_download/sourcedata"
+odir="${base}/rawdata"
+cdir="/N/project/ADNI_rawdata/neuroimaging/conversions"
+sdir="${base}/jobs"
 ldir="${sdir}/logs"
-mkdir -p "${odir}"
 
 # * Load conda as a module
 module load conda
 
 # * Initiate the virtual environment
-source activate /N/u/saiwolf/Quartz/.conda/envs/clinica_env
-export PATH="/N/project/statadni/20231213_Software/dcm2niix_v1.0.20240202:${PATH}"
+conda activate /N/project/cfn-commons/neuroimaging_utils/python-envs/env_clinica
+#export PATH="/N/project/statadni/20231213_Software/dcm2niix_v1.0.20240202:${PATH}"
+module load dcm2niix/1.0.20230411
 
 # * Run Clinica
 clinica \
@@ -33,7 +33,9 @@ clinica \
     -m T1 \
     -m FMRI \
     -m FLAIR \
-    --subjects_list "${sdir}/adni_subs.txt" \
+    -m DWI \
+    -m FMAP \
+    --subjects_list "${sdir}/sub2convert.txt" \
     "${ddir}" \
     "${cdir}" \
     "${odir}" \
