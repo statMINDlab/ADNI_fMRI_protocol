@@ -102,7 +102,6 @@ def test_run_session_heuristics_creates_expected_outputs(tmp_path, monkeypatch, 
         str(
             Path(__file__).resolve().parents[2]
             / "s5_post_clinica_qc"
-            / "analysis"
             / "create_report"
             / "run_session_heuristics.py"
         ),
