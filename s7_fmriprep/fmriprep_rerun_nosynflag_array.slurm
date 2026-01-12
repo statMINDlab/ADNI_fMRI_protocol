@@ -19,7 +19,6 @@ module load apptainer
 BASE=/N/project/statadni/20250922_Saige
 BIDS=${BASE}/adni_db/bids/participants
 DERIV_ROOT=${BASE}/fmriprep/results/derivatives
-DERIV=${DERIV_ROOT}/fmriprep
 LOGS=${BASE}/fmriprep/results/scripts/logs
 DONE=${BASE}/fmriprep/results/scripts/done
 IMG=${BASE}/singularity_images/fmriprep-25.2.3.simg
