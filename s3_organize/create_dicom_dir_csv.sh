@@ -42,7 +42,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$CONFIG_PATH" ]]; then
-<<<<<<< HEAD
   if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[create_dicom_dir_csv] Specified config file does not exist: $CONFIG_PATH" >&2
     exit 1
@@ -63,12 +62,12 @@ fi
 
 cd ${DICOM_ROOT}
 
-# :> unzipped_dicom_dirs_inventory.csv
-# echo "Subject,Description,Acq Date,ImageID" >> unzipped_dicom_dirs_inventory.csv
+:> unzipped_dicom_dirs_inventory.csv
+echo "Subject,Description,Acq Date,ImageID" >> unzipped_dicom_dirs_inventory.csv
 
 for sub in *; do
   [[ -d "$sub" ]] || continue
-  echo "Processing subject: ${sub}"
+  echo "Inventorying subject: ${sub}"
 
   for series in "$sub"/*; do
     [[ -d "$series" ]] || continue
@@ -83,7 +82,7 @@ for sub in *; do
         [[ -d "$imgID" ]] || continue
         imgID_name=$(basename "$imgID")
 
-        #echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
+        echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
 
       done
     done
