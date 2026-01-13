@@ -48,7 +48,6 @@ if [[ -n "$CONFIG_PATH" ]]; then
   fi
   echo "sourcing config from: $CONFIG_PATH"
   cd ${SCRIPT_DIR}/..
-  echo "here we are: $(pwd)"
   DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "$CONFIG_PATH")
 fi
 
