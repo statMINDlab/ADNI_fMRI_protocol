@@ -1,23 +1,69 @@
 #!/bin/bash
+#
+# Create a CSV listing all DICOM directories for downstream QC.
+# The root DICOM directory is read from config/config_adni.yaml
+# (paths.raw_dicom_dir) via the utils.config_tools helper.
+# or provided as an argument with the --path2dicom option
+#
+# Optional arguments:
+#   --config PATH   Use a specific YAML config file instead of the default.
 
-#raw_dicom_dir="/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/image_data/ADNI"
-#raw_dicom_dir="/N/project/ADNI_rawdata/neuroimaging/sourcedata/original/participants"
+#DICOM_ROOT="/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/image_data/ADNI"
 
-raw_dicom_dir=$1  # Pass the raw DICOM directory as the first argument
+set -euo pipefail
 
-if [ -z "$raw_dicom_dir" ]; then
-  echo "Usage: $0 /path/to/raw_dicom_directory"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+CONFIG_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      CONFIG_PATH="$2"
+      shift 2
+      ;;
+    --path2dicom)
+      DICOM_ROOT="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Can be called with a --config argument to specify a config YAML \
+        file or with a --path2dicom argument to specify the full path to the \
+        directory where DICOMs have been unzipped." >&2
+      echo "Usage: $0 [--config /path/to/config.yaml] [--path2dicom /path/to/dicom/dir]" >&2
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--config /path/to/config.yaml]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$CONFIG_PATH" ]]; then
+  if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "[create_dicom_dir_csv] Specified config file does not exist: $CONFIG_PATH" >&2
+    exit 1
+  fi
+  echo "sourcing config from: $CONFIG_PATH"
+  cd ${SCRIPT_DIR}/..
+  echo "here we are: $(pwd)"
+  DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "$CONFIG_PATH")
+fi
+
+if [[ -z "${DICOM_ROOT:-}" ]]; then
+  echo "[create_dicom_dir_csv] specified path to DICOMS is empty or not set in config" >&2
+  exit 1
+elif [[ ! -d "$DICOM_ROOT" ]]; then
+  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: $DICOM_ROOT" >&2
   exit 1
 fi
 
-if [ ! -d "$raw_dicom_dir" ]; then
-  echo "Error: Directory $raw_dicom_dir does not exist."
-  exit 1
-fi
+cd ${DICOM_ROOT}
 
-cd ${raw_dicom_dir}
-
-echo "Subject,Description,Acq Date,ImageID" >> unzipped_dicom_dirs_inventory.csv
+# :> unzipped_dicom_dirs_inventory.csv
+# echo "Subject,Description,Acq Date,ImageID" >> unzipped_dicom_dirs_inventory.csv
 
 for sub in *; do
   [[ -d "$sub" ]] || continue
@@ -36,7 +82,7 @@ for sub in *; do
         [[ -d "$imgID" ]] || continue
         imgID_name=$(basename "$imgID")
 
-        echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
+        # echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
       done
     done
   done
