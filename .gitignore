@@ -404,3 +404,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Generated Clinica per-subject scripts
+s4_clinica/*.txt
+s4_clinica/*_adni_clinica.slurm

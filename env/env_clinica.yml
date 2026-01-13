@@ -1,0 +1,9 @@
+name: clinica_env
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - pip
+  - dcm2niix
+  - clinica

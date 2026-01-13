@@ -1,12 +1,51 @@
 #!/bin/bash
 
-BASE=/N/project/statadni/20250922_Saige
-OUTDIR=$BASE/fmriprep/results/scripts
-BIDS=$BASE/adni_db/bids/participants
-DERIV=$BASE/fmriprep/results/derivatives/fmriprep
-REPORT=$OUTDIR/reports/fmriprep_error_report_ALL.csv   # from the classifier
+# Config-driven helper to compute rerun subject list for fMRIPrep.
+#
+# Reads paths from config/config_adni.yaml via utils.config_tools:
+#   - fmriprep.bids_dir           : BIDS root
+#   - fmriprep.output_dir         : fMRIPrep derivatives root
+#   - paths.fmriprep_results_root : root for results/scripts
+#
+# Usage:
+#   bash rerun_fmriprep_bold_create_job_array.sh [--config /path/to/config.yaml]
 
-#mkdir -p "$OUTDIR"
+set -euo pipefail
+
+CONFIG_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      CONFIG_PATH="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--config /path/to/config.yaml]" >&2
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--config /path/to/config.yaml]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$CONFIG_PATH" ]]; then
+  BIDS=$(python -m utils.config_tools fmriprep.bids_dir --config "$CONFIG_PATH")
+  DERIV=$(python -m utils.config_tools fmriprep.output_dir --config "$CONFIG_PATH")
+  RESULTS_ROOT=$(python -m utils.config_tools paths.fmriprep_results_root --config "$CONFIG_PATH")
+else
+  BIDS=$(python -m utils.config_tools fmriprep.bids_dir)
+  DERIV=$(python -m utils.config_tools fmriprep.output_dir)
+  RESULTS_ROOT=$(python -m utils.config_tools paths.fmriprep_results_root)
+fi
+
+OUTDIR="$RESULTS_ROOT/scripts"
+REPORT="$OUTDIR/reports/fmriprep_error_report_ALL.csv"   # from the classifier
+
+mkdir -p "$OUTDIR"
 
 # 1) Subjects implicated by “no BOLD” or “filtered out” categories (from the CSV)
 AFFECTED=$OUTDIR/subs_needing_rerun_from_report.txt

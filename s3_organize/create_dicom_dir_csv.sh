@@ -8,11 +8,10 @@
 # Optional arguments:
 #   --config PATH   Use a specific YAML config file instead of the default.
 
-#DICOM_ROOT="/N/project/cfn-rady/andrea-dev/ADNI/LONI_data/image_data/ADNI"
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 
 CONFIG_PATH=""
 
@@ -31,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         file or with a --path2dicom argument to specify the full path to the \
         directory where DICOMs have been unzipped." >&2
       echo "Usage: $0 [--config /path/to/config.yaml] [--path2dicom /path/to/dicom/dir]" >&2
+
       exit 0
       ;;
     *)
@@ -42,6 +42,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$CONFIG_PATH" ]]; then
+<<<<<<< HEAD
   if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[create_dicom_dir_csv] Specified config file does not exist: $CONFIG_PATH" >&2
     exit 1
@@ -82,7 +83,8 @@ for sub in *; do
         [[ -d "$imgID" ]] || continue
         imgID_name=$(basename "$imgID")
 
-        # echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
+        #echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
+
       done
     done
   done

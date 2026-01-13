@@ -28,3 +28,4 @@ for i in `cat ${path2subjectList}`; do
     fi
     sbatch ${path2slurmScripts}/${i}_adni_clinica_${modality}.slurm
 done
+

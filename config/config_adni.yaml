@@ -26,15 +26,20 @@ paths:
 
   # Step 4: Clinica BIDS conversion
   clinica_bids_dir: "/N/project/cfn-rady/andrea-dev/ADNI/rawdata"     # BIDS output from Clinica
+  clinica_bids_individual_dir: "/path/to/adni/BIDS_individual"  # Optional per-subject Clinica BIDS root
+  clinica_conversion_info_dir: "/path/to/adni/clinica_conversion_info"  # Folder containing Clinica conversion_info/v*/fmri_paths.tsv
   clinica_subjects_list: "config/clinica_subjects_list.tsv"
 
   # Step 6: MRIQC
-  mriqc_output_dir: "/path/to/adni/derivatives/mriqc"
-  mriqc_work_dir: "/scratch/adni/mriqc_work"
+  mriqc_output_dir: "/path/to/adni/derivatives/mriqc"   # MRIQC derivatives root (mounted as /out)
+  mriqc_work_dir: "/scratch/adni/mriqc_work"             # MRIQC work dir (mounted as /work)
+  mriqc_results_root: "/path/to/adni/mriqc/results"       # Root for scripts/logs/tmp_workdirs, etc.
 
   # Step 7: fMRIPrep
-  fmriprep_output_dir: "/path/to/adni/derivatives/fmriprep"
-  fmriprep_work_dir: "/scratch/adni/fmriprep_work"
+  fmriprep_output_dir: "/path/to/adni/derivatives/fmriprep"   # fMRIPrep derivatives root (mounted as /out)
+  fmriprep_work_dir: "/scratch/adni/fmriprep_work"             # fMRIPrep work dir (mounted as /work)
+  fmriprep_results_root: "/path/to/adni/fmriprep/results"      # Root for scripts/logs/tmp_workdirs, etc.
+  fmriprep_heuristics_csv: "/N/project/statadni/20250922_Saige/fmriprep/slurm/final_heuristics_applied_all_subjects_sessions_grouped_CLEAN.csv"
 
   # Logs & QC tables
   logs_dir: "/path/to/adni/logs"
@@ -56,16 +61,16 @@ hpc:
 
   # Defaults you can use inside Slurm templates
   mriqc:
-    time: "12:00:00"
+    time: "24:00:00"
     mem_gb: 32
-    cpus_per_task: 8
-    n_tasks: 50              # number of array jobs / subjects per batch
+    cpus_per_task: 16
+    n_tasks: 1             # number of array jobs / subjects per batch
 
   fmriprep:
-    time: "48:00:00"
-    mem_gb: 64
-    cpus_per_task: 8
-    n_tasks: 40
+    time: "80:00:00"
+    mem_gb: 32
+    cpus_per_task: 16
+    n_tasks: 1
 
 mriqc:
   bids_dir: "/path/to/adni/clinica_bids"            # can also reference paths.clinica_bids_dir in your scripts
@@ -87,18 +92,23 @@ fmriprep:
   # Common fMRIPrep options
   output_spaces:
     - "MNI152NLin2009cAsym"
+    - "MNI152NLin6Asym"
+    - "fsnative"
+    - "fsaverage:den-10k"
     - "fsLR:den-91k"
   use_syn_sdc: true         # --use-syn-sdc
   force_no_fmap: true       # to safely handle missing PhaseEncodingDirection / fieldmaps
   low_mem: false
-  n_procs: 8
+  n_procs: 16
   omp_nthreads: 4
-  mem_gb: 64
-  bids_filter_file: "config/fmriprep_bids_filter.json"
+  mem_gb: 32
 
 qc:
   post_clinica_qc_table: "s5_post_clinica_qc/post_clinica_qc.tsv"
   mriqc_thresholds_file: "config/mriqc_thresholds.tsv"
   mriqc_qc_table: "s6_mriqc/mriqc_qc_decisions.tsv"
+  heuristics_missing_t1w_table: "s5_post_clinica_qc/create_report/outputs/missing_t1w.tsv"
+  heuristics_missing_data_table: "s5_post_clinica_qc/create_report/outputs/missing_data.tsv"
+  heuristics_final_table: "s5_post_clinica_qc/create_report/outputs/final_heuristics.tsv"
   final_inclusion_table: "s8_final_qc/included_sessions.tsv"
   final_exclusion_table: "s8_final_qc/excluded_sessions.tsv"

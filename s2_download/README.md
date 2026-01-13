@@ -1,6 +1,6 @@
-# Step 2.) Build and Download Image Collection.
+# Step 2.) Build and download image collection
 
-This step does not require any scripts. Rather, follow the instructions for step 2 in the protocol PDF. All steps are done online via the LONI IDA portal. 
+This step does not require any local scripts. All actions are performed in the LONI IDA web portal; follow the instructions below (which mirror Step 2 in the protocol PDF).
 
 After your DUA has been approved, and you have created an account. You will be able to log in to [LONI IDA](https://ida.loni.usc.edu/login.jsp). This is what the login page looks like. 
 
@@ -151,4 +151,4 @@ Once you are successfully logged in, the home page will look like this.
 <img src="screenshots/ADNI_step2.23.png" width="800"/>
 </div>
 
-Now, continue on to [Step 3.](https://github.com/saigerutherford/AD_biomarkers/blob/main/s3_organize/README.md)
+Now, continue on to Step 3 (`s3_organize/README.md`) to unzip and organize the downloaded archives.
