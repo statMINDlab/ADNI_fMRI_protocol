@@ -32,21 +32,34 @@
 
 set -euo pipefail
 
-# -------- required positional arguments --------
-path2slurmJobs=$1
-path2subjectList=$2
-shift 2   # remove the first two args, leaving only optional flags
+# # -------- required positional arguments --------
+# path2slurmJobs=$1
+# path2subjectList=$2
+# shift 2   # remove the first two args, leaving only optional flags
 
 # -------- script directory --------
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # -------- defaults for optional args --------
+CONFIG_PATH=""
 path2slurmTemplate="${SCRIPT_DIR}/adni_clinica.slurm"
 modality=""   # unset unless provided
 
 # -------- parse optional arguments --------
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --config)
+      CONFIG_PATH="$2"
+      shift 2
+      ;;
+    --path2slurmJobs)
+      path2slurmJobs="$2"
+      shift 2
+      ;;
+    --subj2submit)
+      path2subjectList="$2"
+      shift 2
+      ;;
     --template)
       path2slurmTemplate="$2"
       shift 2
@@ -61,6 +74,25 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$CONFIG_PATH" ]]; then
+  if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "[create_dicom_dir_csv] Specified config file does not exist: $CONFIG_PATH" >&2
+    exit 1
+  fi
+  echo "sourcing config from: $CONFIG_PATH"
+  cd ${SCRIPT_DIR}/..
+  DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "$CONFIG_PATH")
+fi
+
+if [[ -z "${DICOM_ROOT:-}" ]]; then
+  echo "[create_dicom_dir_csv] specified path to DICOMS is empty or not set in config" >&2
+  exit 1
+elif [[ ! -d "$DICOM_ROOT" ]]; then
+  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: $DICOM_ROOT" >&2
+  exit 1
+fi
+
 
 #check that paths exist
 if [ ! -d ${path2slurmJobs} ]; then

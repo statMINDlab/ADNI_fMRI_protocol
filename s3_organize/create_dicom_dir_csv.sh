@@ -41,32 +41,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -n "$CONFIG_PATH" ]]; then
-  if [[ ! -f "$CONFIG_PATH" ]]; then
-    echo "[create_dicom_dir_csv] Specified config file does not exist: $CONFIG_PATH" >&2
+if [[ -n "${CONFIG_PATH}" ]]; then
+  if [[ ! -f "${CONFIG_PATH}" ]]; then
+    echo "[create_dicom_dir_csv] Specified config file does not exist: ${CONFIG_PATH}" >&2
     exit 1
   fi
-  echo "sourcing config from: $CONFIG_PATH"
+  echo "sourcing config from: ${CONFIG_PATH}"
   cd ${SCRIPT_DIR}/..
-  DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "$CONFIG_PATH")
+  DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "${CONFIG_PATH}")
 fi
 
 if [[ -z "${DICOM_ROOT:-}" ]]; then
   echo "[create_dicom_dir_csv] specified path to DICOMS is empty or not set in config" >&2
   exit 1
-elif [[ ! -d "$DICOM_ROOT" ]]; then
-  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: $DICOM_ROOT" >&2
+elif [[ ! -d "${DICOM_ROOT}" ]]; then
+  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: ${DICOM_ROOT}" >&2
   exit 1
 fi
 
-cd ${DICOM_ROOT}
+#cd ${DICOM_ROOT}
 
-:> unzipped_dicom_dirs_inventory.csv
-echo "Subject,Description,Acq Date,ImageID" >> unzipped_dicom_dirs_inventory.csv
+:> ${DICOM_ROOT}/unzipped_dicom_dirs_inventory.csv
+echo "Subject,Description,Acq Date,ImageID" >> ${DICOM_ROOT}/unzipped_dicom_dirs_inventory.csv
 
-for sub in *; do
+for sub in ${DICOM_ROOT}/*; do
   [[ -d "$sub" ]] || continue
-  echo "Inventorying subject: ${sub}"
+  sub_name=$(basename "$sub")
+  echo "Inventorying subject: ${sub_name}"
 
   for series in "$sub"/*; do
     [[ -d "$series" ]] || continue
@@ -81,11 +82,11 @@ for sub in *; do
         [[ -d "$imgID" ]] || continue
         imgID_name=$(basename "$imgID")
 
-        echo "${sub},${clean_series},${date_name},${imgID_name}" >> unzipped_dicom_dirs_inventory.csv
+        echo "${sub_name},${clean_series},${date_name},${imgID_name}" >> ${DICOM_ROOT}/unzipped_dicom_dirs_inventory.csv
 
       done
     done
   done
 done
 
-echo "CSV file created: unzipped_dicom_dirs_inventory.csv"
+echo "CSV file created: ${DICOM_ROOT}/unzipped_dicom_dirs_inventory.csv"
