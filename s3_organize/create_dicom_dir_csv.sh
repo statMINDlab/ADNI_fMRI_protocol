@@ -67,6 +67,11 @@ echo "Subject,Description,Acq Date,ImageID" >> ${DICOM_ROOT}/unzipped_dicom_dirs
 for sub in ${DICOM_ROOT}/*; do
   [[ -d "$sub" ]] || continue
   sub_name=$(basename "$sub")
+   # check that sub_name is formatted as 123_S_12345
+  if ! [[ "$sub_name" =~ ^[0-9]{3}_S_[0-9]{4,5}$ ]]; then
+      echo "Warning: Subject directory name ${sub_name} does not match expected format XXX_S_XXXX[X]. Skipping."
+      continue
+  fi 
   echo "Inventorying subject: ${sub_name}"
 
   for series in "$sub"/*; do

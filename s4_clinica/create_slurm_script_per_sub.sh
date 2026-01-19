@@ -70,6 +70,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unexpected argument: $1" >&2
+      echo "Usage: $0 [--config /path/to/config.yaml]" >&2
       exit 1
       ;;
   esac
@@ -83,6 +84,10 @@ if [[ -n "$CONFIG_PATH" ]]; then
   echo "sourcing config from: $CONFIG_PATH"
   cd ${SCRIPT_DIR}/..
   DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "$CONFIG_PATH")
+  path2slurmJobs=$(python -m utils.config_tools paths.slurm_jobs_dir --config "${CONFIG_PATH}")
+  path2subjectList=$(python -m utils.config_tools paths.raw_subject_list --config "${CONFIG_PATH}")
+  path2slurmTemplate=$(python -m utils.config_tools paths.slurm_template --config "${CONFIG_PATH}")
+
 fi
 
 if [[ -z "${DICOM_ROOT:-}" ]]; then
@@ -110,6 +115,14 @@ if [[ ! -f "$path2slurmTemplate" ]]; then
   exit 1; 
 fi 
 
+if [[ -n "$modality" ]]; then
+  # If modality is specified, replace placeholder in the template
+  # (assumes the template has a placeholder like MODALITY_PLACEHOLDER)
+  if [[ "$modality" != "func" && "$modality" != "anat" && "$modality" != "dti" && "$modality" != "pet" ]]; then
+    echo "Error: [create_slurm_script_per_sub] Modality ${modality} is not recognized. Please use 'func', 'anat', 'dti', or 'pet'." >&2
+    exit 1
+  fi
+fi
 
 while IFS= read -r sub; do
   [[ -z "$sub" ]] && continue
@@ -117,12 +130,7 @@ while IFS= read -r sub; do
   echo ${sub} > "${path2slurmJobs}/${sub}.txt"
 
   if [[ -n "$modality" ]]; then
-    # If modality is specified, replace placeholder in the template
-    # (assumes the template has a placeholder like MODALITY_PLACEHOLDER)
-    if [[ "$modality" != "func" && "$modality" != "anat" && "$modality" != "dti" && "$modality" != "pet" ]]; then
-      echo "Error: [create_slurm_script_per_sub] Modality ${modality} is not recognized. Please use 'func', 'anat', 'dti', or 'pet'." >&2
-      exit 1
-    fi
+
     out_slurm="${path2slurmJobs}/${sub}_adni_clinica_${modality}.slurm"
     cp ${path2slurmTemplate} ${out_slurm}
 
