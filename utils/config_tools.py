@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict
+import re
 
 import yaml
 
@@ -29,6 +30,23 @@ _DEFAULT_CONFIG_PATH = (
     Path(__file__).resolve().parents[1] / "config" / "config_adni.yaml"
 )
 
+_env_pattern = re.compile(r"\$\{([^}]+)\}")
+
+def expand_env_vars(obj):
+    if isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [expand_env_vars(v) for v in obj]
+    if isinstance(obj, str):
+        def repl(m):
+            expr = m.group(1)
+            # support ${VAR:-default}
+            if ":-" in expr:
+                var, default = expr.split(":-", 1)
+                return os.environ.get(var, default)
+            return os.environ.get(expr, m.group(0))
+        return _env_pattern.sub(repl, obj)
+    return obj
 
 def load_config(path: str | os.PathLike | None = None) -> Dict[str, Any]:
     """Load YAML config and return as a dict.
@@ -53,7 +71,8 @@ def load_config(path: str | os.PathLike | None = None) -> Dict[str, Any]:
 
     if not isinstance(cfg, dict):
         raise ValueError(f"Config at {path_obj} is not a mapping at top level")
-
+    
+    cfg = expand_env_vars(cfg)
     return cfg
 
 
