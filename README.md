@@ -1,7 +1,7 @@
 # Alzheimer's Disease Neuroimaging Initiative (ADNI) resting-state functional MRI protocol
 This repository contains detailed instructions and scripts for accessing, downloading, converting DICOMs to NIfTI, organizing data into BIDS format, running MRIQC, preprocessing data with fMRIPrep, and QC-ing the ADNI resting-state fMRI data.
 
-This protocol is for ADNI 2, GO, and 3 resting-state fMRI (it also uses the T1w and, if available, T2w images for subjects with fMRI). ADNI 1 does not have rs-fMRI and we did not (yet) process ADNI 4 because Clinica (the software we use for converting DICOM to NIfTI and BIDS-ifying the data) does not yet handle ADNI 4.
+This protocol is for ADNI 2, GO, and 3 resting-state fMRI (it also uses the T1 and, if available, T2 images for subjects with fMRI). ADNI 1 does not have rs-fMRI and we did not (yet) process ADNI 4 because Clinica (the software we use for converting DICOM to NIfTI and BIDS-ifying the data) does not yet handle ADNI 4.
 
 The output of this protocol is high-quality, preprocessed rs-fMRI data in fs-LR 91k (plus MNI, fsnative, and fsaverage5) space, ready for downstream analyses.
 
