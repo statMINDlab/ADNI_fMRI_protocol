@@ -46,28 +46,19 @@ done
 
 if [[ -n "${CONFIG_PATH}" ]]; then
   if [[ ! -f "${CONFIG_PATH}" ]]; then
-    echo "[create_dicom_dir_csv] Specified config file does not exist: ${CONFIG_PATH}" >&2
+    echo "[merge_clinica_conversion_info] Specified config file does not exist: ${CONFIG_PATH}" >&2
     exit 1
   fi
   echo "sourcing config from: ${CONFIG_PATH}"
   cd ${SCRIPT_DIR}/..
-  DICOM_ROOT=$(python -m utils.config_tools paths.raw_dicom_dir --config "${CONFIG_PATH}")
   CONVERSION_INFO_DIR=$(python -m utils.config_tools paths.clinica_conversion_info_dir --config "${CONFIG_PATH}")
 fi
 
-if [[ -z "${DICOM_ROOT:-}" ]]; then
-  echo "[create_dicom_dir_csv] specified path to DICOMS is empty or not set in config" >&2
-  exit 1
-elif [[ ! -d "${DICOM_ROOT}" ]]; then
-  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: ${DICOM_ROOT}" >&2
-  exit 1
-fi
-
 if [[ -z "${CONVERSION_INFO_DIR:-}" ]]; then
-  echo "[create_dicom_dir_csv] specified path to DICOMS is empty or not set in config" >&2
+  echo "[merge_clinica_conversion_info] specified path to conversion_info is empty or not set in config" >&2
   exit 1
 elif [[ ! -d "${CONVERSION_INFO_DIR}" ]]; then
-  echo "[create_dicom_dir_csv] specified DICOM directory does not exist: ${CONVERSION_INFO_DIR}" >&2
+  echo "[merge_clinica_conversion_info] specified conversion_info directory does not exist: ${CONVERSION_INFO_DIR}" >&2
   exit 1
 fi
 

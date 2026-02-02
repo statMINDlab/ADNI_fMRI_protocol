@@ -165,5 +165,6 @@ while IFS= read -r sub; do
       sed -i '' "s|adni_clinica_log|${sub}_clinica_log|" "$out_slurm"
     fi
   fi
+  
 done < "${path2subjectList}"
 echo "[create_slurm_script_per_sub] Finished creating Slurm scripts in: ${path2slurmJobs}"

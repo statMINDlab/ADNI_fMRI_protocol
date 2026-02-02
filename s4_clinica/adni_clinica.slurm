@@ -25,9 +25,9 @@ ldir="${sdir}/logs"
 module load conda
 
 # * Initiate the virtual environment
-conda activate /N/project/cfn-commons/neuroimaging_utils/python-envs/env_clinica
+conda activate /N/project/cfn-commons/neuroimaging_utils/python-envs/env_clinica_dcm2niix2024
 #export PATH="/N/project/statadni/20231213_Software/dcm2niix_v1.0.20240202:${PATH}"
-module load dcm2niix/1.0.20230411
+#module load dcm2niix/1.0.20230411  ## Not needed if using env_clinica provided with repo yml 
 
 # * Run Clinica
 clinica \
