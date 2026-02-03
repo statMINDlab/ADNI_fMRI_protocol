@@ -408,4 +408,3 @@ FodyWeavers.xsd
 # Generated Clinica per-subject scripts
 s4_clinica/*.txt
 s4_clinica/*_adni_clinica.slurm
-config/config_adni.yaml

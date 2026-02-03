@@ -1,0 +1,123 @@
+# config/config_adni.yaml
+# Central configuration file for the ADNI rs-fMRI pipeline.
+
+project:
+  name: "ADNI_rs_fMRI"
+  description: "ADNI 2 / GO / 3 resting-state fMRI preprocessing with Clinica, MRIQC, and fMRIPrep."
+  author: "Saige Rutherford"
+
+# ---- Base locations (override by environment variables in your scripts) ----
+# ADNI_BASE should point to wherever the user stores ADNI data on their system.
+# REPO_ROOT can be derived automatically as the directory containing this config file.
+base:
+  adni_base: "${ADNI_BASE}"     # e.g. /data/adni or /N/project/... (user-specific)
+  scratch_base: "${SCRATCH}"    # e.g. /scratch/$USER
+  containers_base: "${CONTAINERS_DIR:-/containers}"  # optional default
+
+adni:
+  phases:
+    include: ["GO", "2", "3"]
+    exclude: ["1", "4"]   # ADNI 1: no rs-fMRI; 4: not supported yet
+  modalities: ["T1w", "BOLD", "T2w"]
+
+paths:
+  # Repo root should be set by scripts (recommended), but you can allow override:
+  project_root: "${REPO_ROOT}"
+
+  # Step 2–3: raw downloads & organized DICOMs
+  raw_zip_dir: "${ADNI_BASE}/LONI_download/zipped_imaging_data"
+  raw_metadata_dir: "${ADNI_BASE}/LONI_download/meta_data"
+  raw_dicom_dir: "${ADNI_BASE}/LONI_download/sourcedata"
+  raw_subject_list: "${ADNI_BASE}/jobs/sub2convert.txt"
+
+  # Metadata (user-specific base, repo-safe)
+  collection_csv: "${ADNI_BASE}/LONI_download/meta_data/ADNI_go-3_MRI-fMRI-DTI_collection_YYYY-MM-DD.csv"
+  study_files_dir: "${ADNI_BASE}/LONI_download/clindata"
+  participants_tsv: "${ADNI_BASE}/LONI_download/clindata/ADNIMERGE.csv"
+
+  # Step 4: Clinica BIDS conversion
+  slurm_template: "${REPO_ROOT}/s4_clinica/adni_clinica.slurm"
+  slurm_jobs_dir: "${ADNI_BASE}/jobs"
+  clinica_bids_dir: "${ADNI_BASE}/rawdata"
+  clinica_bids_individual_dir: ""  # Optional per-subject Clinica BIDS root
+  clinica_conversion_info_dir: "${ADNI_BASE}/rawdata/conversion_info"
+  clinica_subjects_list: ""
+
+  # Step 6: MRIQC
+  mriqc_output_dir: "${ADNI_BASE}/derivatives/mriqc"
+  mriqc_work_dir: "${SCRATCH}/adni/mriqc_work"
+  mriqc_results_root: "${ADNI_BASE}/results/mriqc"
+
+  # Step 7: fMRIPrep
+  fmriprep_output_dir: "${ADNI_BASE}/derivatives/fmriprep"
+  fmriprep_work_dir: "${SCRATCH}/adni/fmriprep_work"
+  fmriprep_results_root: "${ADNI_BASE}/results/fmriprep"
+  fmriprep_heuristics_csv: "${ADNI_BASE}/fmriprep/heuristics/final_heuristics_applied_all_subjects_sessions_grouped.csv"
+
+  # Logs & QC tables
+  logs_dir: "${ADNI_BASE}/logs"
+  qc_dir: "${ADNI_BASE}/qc"
+
+containers:
+  use_singularity: true
+  mriqc_image: "${CONTAINERS_DIR:-/containers}/mriqc-24.0.0.sif"
+  fmriprep_image: "${CONTAINERS_DIR:-/containers}/fmriprep-24.0.0.sif"
+  freesurfer_license: "${FREESURFER_LICENSE:-/opt/freesurfer/license.txt}"
+
+hpc:
+  scheduler: "slurm"
+  account: "${SLURM_ACCOUNT:-myaccount}"
+  partition: "${SLURM_PARTITION:-general}"
+  qos: null
+  email: "${SLURM_EMAIL:-you@example.com}"
+
+  mriqc:
+    time: "24:00:00"
+    mem_gb: 32
+    cpus_per_task: 16
+    n_tasks: 1
+
+  fmriprep:
+    time: "80:00:00"
+    mem_gb: 32
+    cpus_per_task: 16
+    n_tasks: 1
+
+mriqc:
+  bids_dir: "${ADNI_BASE}/rawdata"
+  output_dir: "${ADNI_BASE}/derivatives/mriqc"
+  work_dir: "${SCRATCH}/adni/mriqc_work"
+  modality: "bold"
+  n_procs: 8
+  mem_gb: 32
+  anat_only: false
+  participant_label_file: "config/mriqc_participant_labels.txt"
+  bids_filter_file: "config/mriqc_bids_filter.json"
+  no_sub: false
+
+fmriprep:
+  bids_dir: "${ADNI_BASE}/rawdata"
+  output_dir: "${ADNI_BASE}/derivatives/fmriprep"
+  work_dir: "${SCRATCH}/adni/fmriprep_work"
+  output_spaces:
+    - "MNI152NLin2009cAsym"
+    - "MNI152NLin6Asym"
+    - "fsnative"
+    - "fsaverage:den-10k"
+    - "fsLR:den-91k"
+  use_syn_sdc: true
+  force_no_fmap: true
+  low_mem: false
+  n_procs: 16
+  omp_nthreads: 4
+  mem_gb: 32
+
+qc:
+  post_clinica_qc_table: "s5_post_clinica_qc/post_clinica_qc.tsv"
+  mriqc_thresholds_file: "config/mriqc_thresholds.tsv"
+  mriqc_qc_table: "s6_mriqc/mriqc_qc_decisions.tsv"
+  heuristics_missing_t1w_table: "s5_post_clinica_qc/create_report/outputs/missing_t1w.tsv"
+  heuristics_missing_data_table: "s5_post_clinica_qc/create_report/outputs/missing_data.tsv"
+  heuristics_final_table: "s5_post_clinica_qc/create_report/outputs/final_heuristics.tsv"
+  final_inclusion_table: "s8_final_qc/included_sessions.tsv"
+  final_exclusion_table: "s8_final_qc/excluded_sessions.tsv"
