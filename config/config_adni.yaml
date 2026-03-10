@@ -6,65 +6,76 @@ project:
   description: "ADNI 2 / GO / 3 resting-state fMRI preprocessing with Clinica, MRIQC, and fMRIPrep."
   author: "Saige Rutherford"
 
+# ---- Base locations (override by environment variables in your scripts) ----
+# ADNI_BASE should point to wherever the user stores ADNI data on their system.
+# REPO_ROOT can be derived automatically as the directory containing this config file.
+base:
+  adni_base: "${ADNI_BASE}"     # e.g. /data/adni or /N/project/... (user-specific)
+  scratch_base: "${SCRATCH}"    # e.g. /scratch/$USER
+  containers_base: "${CONTAINERS_DIR:-/containers}"  # optional default
+
 adni:
   phases:
-    include: ["GO", "2", "3"]      # ADNI phases to include
-    exclude: ["1", "4"]           # ADNI 1 (no rs-fMRI) & 4 (not yet supported in Clinica)
+    include: ["GO", "2", "3"]
+    exclude: ["1", "4"]   # ADNI 1: no rs-fMRI; 4: not supported yet
   modalities: ["T1w", "BOLD", "T2w"]
-  collection_csv: "/path/to/LONI/ADNI_image_collection.csv"
-  study_files_dir: "/path/to/LONI/ADNI_StudyFiles"
-  # optional: file with diagnosis/site/etc. that you use later
-  participants_tsv: "/path/to/study_files/ADNIMERGE.csv"
 
 paths:
-  project_root: "/path/to/ADNI_fMRI_protocol"        # root of this repo on your system
+  # Repo root should be set by scripts (recommended), but you can allow override:
+  project_root: "${REPO_ROOT}"
 
   # Step 2–3: raw downloads & organized DICOMs
-  raw_zip_dir: "/path/to/adni/raw_zips"              # Step 2 output (zip files from LONI)
-  raw_metadata_dir: "/path/to/adni/raw_metadata"     # CSV/URL lists from LONI
-  raw_dicom_dir: "/path/to/adni/dicom_unzipped"      # Step 3 unzipped tree
+  raw_zip_dir: "${ADNI_BASE}/LONI_download/zipped_imaging_data"
+  raw_metadata_dir: "${ADNI_BASE}/LONI_download/meta_data"
+  raw_dicom_dir: "${ADNI_BASE}/LONI_download/sourcedata"
+  raw_subject_list: "${ADNI_BASE}/jobs/sub2convert.txt"
+
+  # Metadata (user-specific base, repo-safe)
+  collection_csv: "${ADNI_BASE}/LONI_download/meta_data/ADNI_go-3_MRI-fMRI-DTI_collection_YYYY-MM-DD.csv"
+  study_files_dir: "${ADNI_BASE}/LONI_download/clindata"
+  participants_tsv: "${ADNI_BASE}/LONI_download/clindata/ADNIMERGE.csv"
 
   # Step 4: Clinica BIDS conversion
-  clinica_bids_dir: "/path/to/adni/clinica_bids"     # BIDS output from Clinica (merged BIDS_all)
-  clinica_bids_individual_dir: "/path/to/adni/BIDS_individual"  # Optional per-subject Clinica BIDS root
-  clinica_conversion_info_dir: "/path/to/adni/clinica_conversion_info"  # Folder containing Clinica conversion_info/v*/fmri_paths.tsv
-  clinica_subjects_list: "config/clinica_subjects_list.tsv"
+  slurm_template: "${REPO_ROOT}/s4_clinica/adni_clinica.slurm"
+  slurm_jobs_dir: "${ADNI_BASE}/jobs"
+  clinica_bids_dir: "${ADNI_BASE}/rawdata"
+  clinica_bids_individual_dir: ""  # Optional per-subject Clinica BIDS root
+  clinica_conversion_info_dir: "${ADNI_BASE}/rawdata/conversion_info"
+  clinica_subjects_list: ""
 
   # Step 6: MRIQC
-  mriqc_output_dir: "/path/to/adni/derivatives/mriqc"   # MRIQC derivatives root (mounted as /out)
-  mriqc_work_dir: "/scratch/adni/mriqc_work"             # MRIQC work dir (mounted as /work)
-  mriqc_results_root: "/path/to/adni/mriqc/results"       # Root for scripts/logs/tmp_workdirs, etc.
+  mriqc_output_dir: "${ADNI_BASE}/derivatives/mriqc"
+  mriqc_work_dir: "${SCRATCH}/adni/mriqc_work"
+  mriqc_results_root: "${ADNI_BASE}/results/mriqc"
 
   # Step 7: fMRIPrep
-  fmriprep_output_dir: "/path/to/adni/derivatives/fmriprep"   # fMRIPrep derivatives root (mounted as /out)
-  fmriprep_work_dir: "/scratch/adni/fmriprep_work"             # fMRIPrep work dir (mounted as /work)
-  fmriprep_results_root: "/path/to/adni/fmriprep/results"      # Root for scripts/logs/tmp_workdirs, etc.
-  fmriprep_heuristics_csv: "/N/project/statadni/20250922_Saige/fmriprep/slurm/final_heuristics_applied_all_subjects_sessions_grouped_CLEAN.csv"
+  fmriprep_output_dir: "${ADNI_BASE}/derivatives/fmriprep"
+  fmriprep_work_dir: "${SCRATCH}/adni/fmriprep_work"
+  fmriprep_results_root: "${ADNI_BASE}/results/fmriprep"
+  fmriprep_heuristics_csv: "${ADNI_BASE}/fmriprep/heuristics/final_heuristics_applied_all_subjects_sessions_grouped.csv"
 
   # Logs & QC tables
-  logs_dir: "/path/to/adni/logs"
-  qc_dir: "/path/to/adni/qc"
+  logs_dir: "${ADNI_BASE}/logs"
+  qc_dir: "${ADNI_BASE}/qc"
 
 containers:
   use_singularity: true
-  # Paths to your container images (or Docker images if not using Singularity)
-  mriqc_image: "/containers/mriqc-24.0.0.sif"
-  fmriprep_image: "/containers/fmriprep-24.0.0.sif"
-  freesurfer_license: "/opt/freesurfer/license.txt"
+  mriqc_image: "${CONTAINERS_DIR:-/containers}/mriqc-24.0.0.sif"
+  fmriprep_image: "${CONTAINERS_DIR:-/containers}/fmriprep-24.0.0.sif"
+  freesurfer_license: "${FREESURFER_LICENSE:-/opt/freesurfer/license.txt}"
 
 hpc:
-  scheduler: "slurm"         # or "local" if running without a scheduler
-  account: "myaccount"
-  partition: "general"
-  qos: null                  # set to e.g. "long" if needed
-  email: "you@example.com"
+  scheduler: "slurm"
+  account: "${SLURM_ACCOUNT:-myaccount}"
+  partition: "${SLURM_PARTITION:-general}"
+  qos: null
+  email: "${SLURM_EMAIL:-you@example.com}"
 
-  # Defaults you can use inside Slurm templates
   mriqc:
     time: "24:00:00"
     mem_gb: 32
     cpus_per_task: 16
-    n_tasks: 1             # number of array jobs / subjects per batch
+    n_tasks: 1
 
   fmriprep:
     time: "80:00:00"
@@ -73,31 +84,29 @@ hpc:
     n_tasks: 1
 
 mriqc:
-  bids_dir: "/path/to/adni/clinica_bids"            # can also reference paths.clinica_bids_dir in your scripts
-  output_dir: "/path/to/adni/derivatives/mriqc"
-  work_dir: "/scratch/adni/mriqc_work"
+  bids_dir: "${ADNI_BASE}/rawdata"
+  output_dir: "${ADNI_BASE}/derivatives/mriqc"
+  work_dir: "${SCRATCH}/adni/mriqc_work"
   modality: "bold"
   n_procs: 8
   mem_gb: 32
   anat_only: false
   participant_label_file: "config/mriqc_participant_labels.txt"
   bids_filter_file: "config/mriqc_bids_filter.json"
-  no_sub: false             # set true if you only want group-level
+  no_sub: false
 
 fmriprep:
-  bids_dir: "/path/to/adni/clinica_bids"
-  output_dir: "/path/to/adni/derivatives/fmriprep"
-  work_dir: "/scratch/adni/fmriprep_work"
-
-  # Common fMRIPrep options
+  bids_dir: "${ADNI_BASE}/rawdata"
+  output_dir: "${ADNI_BASE}/derivatives/fmriprep"
+  work_dir: "${SCRATCH}/adni/fmriprep_work"
   output_spaces:
     - "MNI152NLin2009cAsym"
     - "MNI152NLin6Asym"
     - "fsnative"
     - "fsaverage:den-10k"
     - "fsLR:den-91k"
-  use_syn_sdc: true         # --use-syn-sdc
-  force_no_fmap: true       # to safely handle missing PhaseEncodingDirection / fieldmaps
+  use_syn_sdc: true
+  force_no_fmap: true
   low_mem: false
   n_procs: 16
   omp_nthreads: 4
