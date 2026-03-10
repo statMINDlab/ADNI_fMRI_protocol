@@ -12,7 +12,8 @@ CONFIG ?= config/config_adni.yaml
 
 .PHONY: all \
         step1 step2 step3 step4 step5 step6 step7 step8 \
-        download organize clinica post_clinica_qc mriqc fmriprep final_qc
+        download organize clinica post_clinica_qc mriqc fmriprep final_qc \
+        test lint
 
 # By default, only run the automated parts (3–8).
 all: step3 step4 step5 step6 step7 step8
@@ -111,3 +112,20 @@ status:
 	@echo "Pipeline status (implement utils/print_pipeline_status.py if desired)..."
 	@echo "This could, for example, count finished subjects per step."
 	# python utils/print_pipeline_status.py --config $(CONFIG)
+
+########################################
+# Developer helpers
+########################################
+
+test:
+	pytest
+
+lint:
+	@echo "Running Ruff (Python lint) and shellcheck (Bash/Slurm lint)..."
+	ruff check .
+	@# shellcheck on tracked shell/Slurm scripts; ignore if none
+	@if git ls-files '*.sh' '*.slurm' >/dev/null 2>&1; then \
+		shellcheck $$(git ls-files '*.sh' '*.slurm'); \
+	else \
+		echo "No shell or Slurm scripts found for shellcheck"; \
+	fi

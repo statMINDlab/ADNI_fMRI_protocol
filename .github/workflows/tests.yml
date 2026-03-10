@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyyaml
+          # Install post-Clinica QC dependencies (pandas, numpy, etc.)
+          if [ -f s5_post_clinica_qc/requirements.txt ]; then
+            pip install -r s5_post_clinica_qc/requirements.txt
+          fi
+
+      - name: Run tests
+        run: |
+          pytest
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install lint tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run Ruff (Python lint)
+        run: |
+          ruff check .
+
+      - name: Run shellcheck (Bash/Slurm scripts)
+        run: |
+          shellcheck $(git ls-files '*.sh' '*.slurm')

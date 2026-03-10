@@ -1,0 +1,25 @@
+# Ruff configuration for ADNI_fMRI_protocol
+
+line-length = 100
+target-version = "py311"
+
+# Do not lint notebooks; they contain exploratory code and long literals.
+exclude = ["**/*.ipynb"]
+
+[lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = [
+  # Allow unused imports in __init__ and tests for convenience
+  "F401",
+  # Relax style-only rules that generate many hits in exploratory/analysis code
+  "E501",  # line too long
+  "E401", "E402",  # import layout / multiple imports
+  "E701", "E702",  # multiple statements per line
+  "W291", "W292", "W293",  # trailing/blank-line whitespace
+  "B006", "B007", "B009",  # non-critical bugbear warnings in analysis code
+  "F541",  # f-string without placeholders (used for multiline formatting)
+  "I001",  # import block formatting (we rely on manual grouping)
+]
+
+[lint.per-file-ignores]
+"utils/tests/*" = ["D", "S101", "PLR2004", "E501"]

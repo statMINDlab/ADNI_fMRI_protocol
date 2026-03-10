@@ -486,6 +486,12 @@ all_IQMs_with_QC_clean <- all_IQMs_with_QC %>%
     -c(participant_id, ses_id)   # drop rows if ANY non-ID column has NA
   )
 
+all_IQMs_with_QC_clean <- all_IQMs_with_QC_clean %>%
+  dplyr::rename(
+    sub = participant_id,
+    ses = ses_id
+  )
+
 write_tsv(
   all_IQMs_with_QC_clean,
   "Desktop/ADNI_paper/temp/all_IQMs_with_QC_flags_clean.tsv"
