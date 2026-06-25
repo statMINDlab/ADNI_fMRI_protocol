@@ -64,8 +64,8 @@
 
 `create_dicom_dir_csv.sh` is now config-driven. It reads the root of the unzipped DICOM tree from `config/config_adni.yaml` (for example, `paths.raw_dicom_dir`) via `utils.config_tools`, so you should configure that YAML file instead of editing the script.
 
-**3.9.)** Use the Python notebook `dicom_download_qc.ipynb` to compare the unzipped DICOM directories with the image-collection download list from ADNI. You can also use this notebook to isolate the necessary modalities for preprocessing (T1w, T2w, resting-state fMRI). The names of the DICOM folders are inconsistent, so this notebook contains the dictionary for mapping T1w, T2w, and rs-fMRI folder names across subjects and sessions.
+**3.9.)** Use the Python notebook `dicom_download_qc.ipynb` to compare the unzipped DICOM directories with the image-collection download list from ADNI. You can also use this notebook to isolate the necessary modalities for preprocessing (T1w, T2w, resting-state fMRI). The names of the DICOM folders are inconsistent, so this notebook contains the dictionary for mapping T1w, T2w, and rs-fMRI folder names across subjects and sessions. This notebook is meant for data exploration purposes and does not generate any necessary results for the rest of the pipeline.
 
-**3.10.)** Once you have finalized the list of DICOM directories, you can use this notebook to create the list of subjects to pass on to the next step, where we convert to NIfTI and BIDS-ify the data using Clinica. The subject list should be saved as a plain-text file with one subject ID per line (for example, `adni_subs.txt`) and referenced by the Clinica helper scripts in Step 4.
+**3.10.)** Once you have finalized the list of DICOM directories, you can use `make_subject_list_for_conversion.sh` to create the list of subjects to pass on to the next step, where we convert to NIfTI and BIDS-ify the data using Clinica. The subject list should be saved as a plain-text file with one subject ID per line (for example, `adni_subs.txt`) and referenced by the Clinica helper scripts in Step 4.
 
 Now, continue on to Step 4 (`s4_clinica/README.md`).
