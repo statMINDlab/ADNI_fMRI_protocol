@@ -16,26 +16,20 @@ The top-level README describes the protocol as 8 steps, each with its own subdir
 
 - Central config: `config/config_adni.yaml`
   - Defines ADNI phases/modalities, all important data paths (raw zips, DICOM tree, Clinica BIDS, derivatives), container locations, and Slurm defaults.
-  - Most scripts and the `Makefile` assume you customize this file rather than hardcoding paths.
+  - Most scripts assume you customize this file rather than hardcoding paths.
 
-### Make targets (high-level orchestration)
+### Step scripts (high-level orchestration)
 
-The `Makefile` is a thin wrapper over step-specific scripts, parameterized by `CONFIG` (defaults to `config/config_adni.yaml`). These targets assume that referenced `run_*.sh` scripts exist and are executable.
+Each step is run directly via its own script, parameterized by `--config` (defaults to `config/config_adni.yaml`). See each step's `README.md` for details.
 
-- Run all automated steps (3–8):
-  - `make all`
-- Individual steps:
-  - `make step1` – prints instructions; step is fully manual (account setup, DUA), see `s1_setup_account/README.md`.
-  - `make step2` or `make download` – prints instructions; step is manual in the LONI IDA UI, see `s2_download/README.md`.
-  - `make step3` or `make organize` – calls `bash s3_organize/run_s3_organize.sh --config config/config_adni.yaml` to unzip, organize, and QC the download.
-  - `make step4` or `make clinica` – calls `bash s4_clinica/run_clinica_adni2bids.sh --config config/config_adni.yaml` to run Clinica ADNI→BIDS conversion.
-  - `make step5` or `make post_clinica_qc` – calls `bash s5_post_clinica_qc/run_post_clinica_qc.sh --config config/config_adni.yaml` for post-Clinica QC.
-  - `make step6` or `make mriqc` – calls `bash s6_mriqc/run_mriqc_array.sh --config config/config_adni.yaml` to run MRIQC (participant/group); assumes Slurm or equivalent.
-  - `make step7` or `make fmriprep` – calls `bash s7_fmriprep/run_fmriprep_array.sh --config config/config_adni.yaml` to run fMRIPrep via Slurm/containers.
-  - `make step8` or `make final_qc` – calls `bash s8_final_qc/run_final_qc.sh --config config/config_adni.yaml` to perform final QC and generate inclusion/exclusion tables.
-- Helpers:
-  - `make clean_workdirs` – deletes hardcoded MRIQC and fMRIPrep work dirs under `/scratch/adni/...` (edit paths before using).
-  - `make status` – placeholder that could be wired to a future `utils/print_pipeline_status.py`.
+- Step 1 – fully manual (account setup, DUA), see `s1_setup_account/README.md`.
+- Step 2 – manual in the LONI IDA UI, see `s2_download/README.md`.
+- Step 3 – `bash s3_organize/run_s3_organize.sh --config config/config_adni.yaml` to unzip, organize, and QC the download.
+- Step 4 – `bash s4_clinica/run_clinica_adni2bids.sh --config config/config_adni.yaml` to run Clinica ADNI→BIDS conversion.
+- Step 5 – `bash s5_post_clinica_qc/run_post_clinica_qc.sh --config config/config_adni.yaml` for post-Clinica QC.
+- Step 6 – `bash s6_mriqc/run_mriqc_array.sh --config config/config_adni.yaml` to run MRIQC (participant/group); assumes Slurm or equivalent.
+- Step 7 – `bash s7_fmriprep/run_fmriprep_array.sh --config config/config_adni.yaml` to run fMRIPrep via Slurm/containers.
+- Step 8 – `bash s8_final_qc/run_final_qc.sh --config config/config_adni.yaml` to perform final QC and generate inclusion/exclusion tables.
 
 ### Environment and dependencies
 
@@ -151,13 +145,13 @@ Typical commands from the repository root (with the `env/env_adni.yml` environme
 
 - Run all tests:
   - `pytest`
-  - or `make test` (wrapper around `pytest`).
 - Run tests in a single file:
   - `pytest utils/tests/test_config_tools.py`
 - Run a single test:
   - `pytest utils/tests/test_config_tools.py::test_cli_outputs_scalar_value`
 - Lint Python and shell/Slurm scripts:
-  - `make lint` (runs `ruff check .` and `shellcheck` on tracked `*.sh`/`*.slurm` files).
+  - `ruff check .`
+  - `shellcheck $(git ls-files '*.sh' '*.slurm')`
 
 ## High-level architecture
 

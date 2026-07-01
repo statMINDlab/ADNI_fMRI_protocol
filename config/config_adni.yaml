@@ -52,7 +52,7 @@ paths:
   fmriprep_output_dir: "${ADNI_BASE}/derivatives/fmriprep"
   fmriprep_work_dir: "${SCRATCH}/adni/fmriprep_work"
   fmriprep_results_root: "${ADNI_BASE}/results/fmriprep"
-  fmriprep_heuristics_csv: "${ADNI_BASE}/fmriprep/heuristics/final_heuristics_applied_all_subjects_sessions_grouped.csv"
+  fmriprep_heuristics_csv: "${ADNI_BASE}/fmriprep/heuristics/post_Clinica.csv"
 
   # Logs & QC tables
   logs_dir: "${ADNI_BASE}/logs"

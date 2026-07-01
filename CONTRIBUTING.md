@@ -19,7 +19,7 @@ This repository is primarily maintained by the authors of the ADNI rs-fMRI proto
 From the repository root:
 
 ```bash
-make test
+pytest
 ```
 
 This runs the pytest suite under `utils/tests/`, including integration-style tests for the config helper and the MRIQC/fMRIPrep/Clinica shell scripts. These tests stub out heavy dependencies like `module` and `apptainer` so they can run on a typical development machine.
@@ -38,7 +38,8 @@ We use [Ruff](https://docs.astral.sh/ruff/) for Python linting and [shellcheck](
 To run both linters locally:
 
 ```bash
-make lint
+ruff check .
+shellcheck $(git ls-files '*.sh' '*.slurm')
 ```
 
 This will:

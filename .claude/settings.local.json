@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest utils/tests/test_fmriprep_scripts.py utils/tests/test_run_session_heuristics.py -q)"
+    ]
+  }
+}

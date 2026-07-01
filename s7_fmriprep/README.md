@@ -17,10 +17,10 @@ The main driver script is `s7_fmriprep/run_fmriprep_bids_filter_array_all_SW.sh`
    - runs fMRIPrep with the configured arguments (output spaces including fs-LR 91k, MNI, fsnative, fsaverage5; syn-based SDC; etc.),
    - cleans up the work directory and marks the subject as done on success.
 
-You can generate the job arrays by running the driver script directly, or via the `Makefile` target:
+You can generate the job arrays by running the driver script directly:
 
 ```bash
-make fmriprep
+bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml
 ```
 
 Inspect and adjust the generated `fmriprep_array_*.slurm` scripts as needed for your cluster (account, partition, wall time, memory, CPUs), then submit the ones you want to run with `sbatch`.

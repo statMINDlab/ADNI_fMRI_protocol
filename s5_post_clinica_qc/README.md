@@ -47,7 +47,7 @@ cd s5_post_clinica_qc/create_report
 python run_session_heuristics.py \
   --input-csv ../create_mastersheet/data/statadni/anchor_plus_dicom_nifti_struct.csv \
   --output-dir ./outputs \
-  --fmriprep-subjects-csv /N/project/statadni/20250922_Saige/fmriprep/slurm/final_heuristics_applied_all_subjects_sessions_grouped_CLEAN.csv \
+  --fmriprep-subjects-csv /N/project/statadni/20250922_Saige/fmriprep/heuristics/post_Clinica.csv \
   --phase-limit 2
 ```
 

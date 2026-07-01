@@ -39,12 +39,6 @@ You can run the driver script manually as:
 bash s6_mriqc/adni_mriqc.slurm --config config/config_adni.yaml
 ```
 
-or invoke it via the `Makefile` target:
-
-```bash
-make mriqc
-```
-
 (Adjust Slurm account, partition, and resource requests inside the generated `mriqc_array_*.slurm` scripts as needed for your cluster, or expose them via additional config keys.)
 
 To inspect what would be run without touching Apptainer or generating job scripts, use the dry-run mode:

@@ -15,13 +15,7 @@ The output of this protocol is high-quality, preprocessed rs-fMRI data in fs-LR 
 3. Edit `config/config_adni.yaml` with your local paths, container locations, and cluster settings.
 4. (Optional but recommended) Skim the step-specific READMEs below to understand manual vs automated pieces.
 5. Download data via the LONI IDA web UI following `s1_setup_account/README.md` and `s2_download/README.md`.
-6. Run the automated steps via the `Makefile`, for example:
-   - `make organize` (or `make step3`)
-   - `make clinica` (or `make step4`)
-   - `make post_clinica_qc` (or `make step5`)
-   - `make mriqc` (or `make step6`)
-   - `make fmriprep` (or `make step7`)
-   - `make final_qc` (or `make step8`)
+6. Run the automated steps directly using the scripts described in each step's `README.md` (`s3_organize/`, `s4_clinica/`, `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, `s8_final_qc/`).
 7. Inspect QC reports and tables in `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, and `s8_final_qc/`.
 8. Use the final inclusion tables (for example, `included_sessions.tsv`) for downstream analyses.
 
@@ -69,7 +63,7 @@ flowchart TB
   BIDS["Clinica BIDS dataset (paths.clinica_bids_dir)"]
   ANCHOR["anchor_plus_dicom_nifti_struct.csv (Step 5 mastersheet)"]
   HEUR_SESS["final_heuristics.tsv (qc.heuristics_final_table) (session-level)"]
-  HEUR_SUBJ["final_heuristics_applied_all_subjects_sessions_grouped_CLEAN.csv (paths.fmriprep_heuristics_csv) (subject-level)"]
+  HEUR_SUBJ["post_Clinica.csv (paths.fmriprep_heuristics_csv) (subject-level)"]
   MRIQC_DERIV["MRIQC derivatives (paths.mriqc_output_dir)"]
   FMRIPREP_DERIV["fMRIPrep derivatives (paths.fmriprep_output_dir)"]
   FINAL_INCLUDED["included_sessions.tsv (qc.final_inclusion_table)"]
