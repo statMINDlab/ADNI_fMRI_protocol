@@ -413,5 +413,10 @@ s4_clinica/*_adni_clinica.slurm
 # These are ADNI subject-derived data and must not be committed under the DUA.
 s5_post_clinica_qc/create_mastersheet/data/
 
+# Step 4b slice-timing report (per-run, contains subject IDs / paths).
+s4b_slice_timing/slice_timing_report.tsv
+# Sidecar backups written by insert_philips_slicetiming.py
+*.json.bak
+
 # Local pytest cache
 .pytest_cache/

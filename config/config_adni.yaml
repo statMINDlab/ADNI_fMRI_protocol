@@ -35,6 +35,11 @@ paths:
   study_files_dir: "${ADNI_BASE}/LONI_download/clindata"
   participants_tsv: "${ADNI_BASE}/LONI_download/clindata/ADNIMERGE.csv"
 
+  # Step 4b: ADNI fMRI acquisition metadata (Mayo MAYOADIRL_MRI_FMRI_NFQ_*.csv),
+  # downloaded from LONI. Its SLICETIMING column holds per-slice absolute
+  # acquisition times used to repair missing SliceTiming on Philips scans.
+  adni_fmri_metadata_csv: "${ADNI_BASE}/LONI_download/clindata/MAYOADIRL_MRI_FMRI_NFQ.csv"
+
   # Step 4: Clinica BIDS conversion
   slurm_template: "${REPO_ROOT}/s4_clinica/adni_clinica.slurm"
   slurm_jobs_dir: "${ADNI_BASE}/jobs"
@@ -111,6 +116,34 @@ fmriprep:
   n_procs: 16
   omp_nthreads: 4
   mem_gb: 32
+
+# ---- Step 4b: repair missing SliceTiming on Philips BOLD scans ----
+# dcm2niix/Clinica do not populate SliceTiming for many Philips rs-fMRI scans.
+# insert_philips_slicetiming.py fills it from the ADNI fMRI metadata CSV
+# (paths.adni_fmri_metadata_csv).
+slice_timing:
+  # Which sidecars to touch, as a glob relative to the BIDS root. Defaults to the
+  # resting-state BOLD JSON only, since ADNI fMRI is resting state.
+  bold_json_glob: "sub-*/**/func/*task-rest_bold.json"
+  # Substring(s), case-insensitive, matched against the JSON "Manufacturer"
+  # field to decide which scans this step touches.
+  manufacturers: ["Philips"]
+  # Acquisition order (1-indexed, first three slices) considered "standard" for
+  # ADNI Philips rs-fMRI. Scans with any other pattern are written but flagged
+  # in the report for manual review rather than silently trusted.
+  standard_slice_pattern: "(1, 3, 5, ...)"
+  # Write SliceTiming even when the pattern is non-standard (flagged). If false,
+  # flagged scans are reported but their sidecars are left untouched.
+  write_flagged: true
+  # Only fill scans whose sidecar has no (or empty) SliceTiming. If true, never
+  # overwrite an existing SliceTiming array.
+  skip_if_present: true
+  # Save the original sidecar as <name>.json.bak before writing.
+  backup_json: true
+  # Tolerance (seconds) when checking the CSV TR against the sidecar TR.
+  tr_tolerance_s: 0.1
+  # Where the per-scan report is written.
+  report_tsv: "s4b_slice_timing/slice_timing_report.tsv"
 
 qc:
   post_clinica_qc_table: "s5_post_clinica_qc/post_clinica_qc.tsv"
