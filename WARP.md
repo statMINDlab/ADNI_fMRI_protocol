@@ -29,6 +29,7 @@ command list. The main scripted entry points are:
 - Step 2 – manual in the LONI IDA UI, see `s2_download/README.md`.
 - Step 3 – `bash s3_organize/create_dicom_dir_csv.sh --config config/config_adni.yaml` to inventory the unzipped DICOM tree, plus `make_subject_list_for_conversions.sh` and the `dicom_download_qc.ipynb` notebook.
 - Step 4 – `bash s4_clinica/create_slurm_script_per_sub.sh --config config/config_adni.yaml`, then `adni_submit_slurm.sh` to submit, then `merge_individual_clinica.sh` to merge per-subject BIDS output.
+- Step 4b – `python s4b_slice_timing/insert_philips_slicetiming.py --config config/config_adni.yaml` to fill missing `SliceTiming` on Philips BOLD sidecars from the ADNI fMRI metadata CSV (`paths.adni_fmri_metadata_csv`). Supports `--dry-run`; writes a report TSV. Runs on the merged BIDS tree, before Step 5.
 - Step 5 – `python main.py --config <cfg>` from inside `s5_post_clinica_qc/create_mastersheet/`, then `python s5_post_clinica_qc/create_report/run_session_heuristics.py` (plus the `create_report/main.ipynb` and `post_clinica_qc.ipynb` notebooks).
 - Step 6 – `bash s6_mriqc/adni_mriqc.slurm --config config/config_adni.yaml` (participant) and `sbatch s6_mriqc/mriqc_group.slurm` (group).
 - Step 7 – `bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml` to build fMRIPrep job arrays, with `fmriprep_error_report.py` and `rerun_fmriprep_bold_create_job_array.sh` for the error/rerun loop.
