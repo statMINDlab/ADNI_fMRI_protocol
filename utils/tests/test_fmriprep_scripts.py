@@ -43,7 +43,7 @@ exit 0
 
 
 def test_run_fmriprep_exits_on_missing_required_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """run_fmriprep_bids_filter_array_all_SW.sh errors when required values missing."""
+    """run_fmriprep_bids_filter_array_all.sh errors when required values missing."""
 
     _setup_stub_binaries(tmp_path, monkeypatch)
 

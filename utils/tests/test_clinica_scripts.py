@@ -17,14 +17,19 @@ CLINICA_DIR = REPO_ROOT / "s4_clinica"
 
 
 def test_create_slurm_script_per_sub_creates_per_subject_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """create_slurm_script_per_sub.sh creates per-subject text and Slurm files."""
+    """create_slurm_script_per_sub.sh creates per-subject text and Slurm files.
 
-    # Work in an isolated copy of the s4_clinica directory
-    workdir = tmp_path / "s4_clinica"
-    workdir.mkdir()
+    The script is config-driven: it reads the DICOM root, Slurm jobs dir,
+    subject list, and template path from the YAML passed via ``--config``.
+    """
 
-    # Minimal template and subject list
-    template = workdir / "adni_clinica.slurm"
+    # Fixtures the script requires to exist on disk.
+    dicom_root = tmp_path / "sourcedata"
+    dicom_root.mkdir()
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+
+    template = tmp_path / "adni_clinica.slurm"
     template.write_text(
         """#!/bin/bash
 #SBATCH --job-name=ADNI
@@ -38,23 +43,38 @@ def test_create_slurm_script_per_sub_creates_per_subject_files(tmp_path: Path, m
         encoding="utf-8",
     )
 
-    subs = workdir / "adni_subs.txt"
+    subs = tmp_path / "adni_subs.txt"
     subs.write_text("S_0001\nS_0002\n", encoding="utf-8")
 
-    monkeypatch.chdir(workdir)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        """
+        paths:
+          raw_dicom_dir: {dicom_root}
+          slurm_jobs_dir: {jobs}
+          raw_subject_list: {subs}
+          slurm_template: {template}
+        """.format(dicom_root=dicom_root, jobs=jobs_dir, subs=subs, template=template),
+        encoding="utf-8",
+    )
 
     result = subprocess.run(
-        ["bash", str(CLINICA_DIR / "create_slurm_script_per_sub.sh")],
-        cwd=str(workdir),
+        ["bash", str(CLINICA_DIR / "create_slurm_script_per_sub.sh"), "--config", str(cfg)],
+        cwd=str(REPO_ROOT),
         check=False,
         capture_output=True,
         text=True,
     )
 
-    # Script should at least succeed; we do not assert on specific outputs
-    # here because the script currently always cds into the repository
-    # s4_clinica directory and uses its own adni_subs.txt.
     assert result.returncode == 0, result.stderr
+
+    # One subject-list file and one Slurm script per subject, with the subject
+    # ID substituted into the template placeholders.
+    for sub in ("S_0001", "S_0002"):
+        assert (jobs_dir / f"{sub}.txt").is_file()
+        slurm = jobs_dir / f"{sub}_adni_clinica.slurm"
+        assert slurm.is_file()
+        assert sub in slurm.read_text(encoding="utf-8")
 
 
 def test_merge_individual_clinica_exits_on_missing_required_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -8,7 +8,7 @@ The entry point is `create_mastersheet/main.py`. It is now fully config-driven:
 
 1. Ensure `config/config_adni.yaml` has the correct paths for your Clinica `conversion_info` tables, BIDS root, and output locations used by the master-sheet code.
 2. Install the required Python libraries into your active environment:
-   - `cd s5_post_clinica_qc/analysis`
+   - `cd s5_post_clinica_qc`
    - `pip install -r requirements.txt` (or `conda install --file requirements.txt`).
 3. From `s5_post_clinica_qc/create_mastersheet/`, run:
    - `python main.py --config ../../config/config_adni.yaml`
