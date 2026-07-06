@@ -47,17 +47,21 @@ def test_create_dicom_dir_csv_errors_on_empty_config(tmp_path: Path) -> None:
 
 
 def test_create_dicom_dir_csv_writes_expected_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Script walks a small fake DICOM tree and writes dicom_dirs.csv."""
+    """Script walks a small fake DICOM tree and writes the inventory CSV.
+
+    Subject directories must match the ADNI convention ``NNN_S_NNNN[N]`` or the
+    script skips them, so the fixture uses a valid subject ID.
+    """
 
     # Build fake DICOM directory tree: sub/scan/date/leaf
     root = tmp_path / "dicoms"
-    leaf = root / "S_0001" / "SCAN_A" / "20200101" / "SERIES01"
+    leaf = root / "123_S_1234" / "SCAN_A" / "20200101" / "SERIES01"
     leaf.mkdir(parents=True)
 
     cfg = tmp_path / "config.yaml"
     _write_config(cfg, str(root))
 
-    # Run script; it cd's into DICOM_ROOT and writes dicom_dirs.csv there
+    # Run script; it writes unzipped_dicom_dirs_inventory.csv into DICOM_ROOT
     result = subprocess.run(
         ["bash", str(SCRIPT), "--config", str(cfg)],
         cwd=str(REPO_ROOT),
@@ -68,13 +72,13 @@ def test_create_dicom_dir_csv_writes_expected_rows(tmp_path: Path, monkeypatch: 
 
     assert result.returncode == 0, result.stderr
 
-    csv_path = root / "dicom_dirs.csv"
+    csv_path = root / "unzipped_dicom_dirs_inventory.csv"
     assert csv_path.exists()
 
     lines = csv_path.read_text(encoding="utf-8").strip().splitlines()
     # Header + one row
-    assert lines[0] == "sub_ID,scan_name,scan_date,leaf_dir"
+    assert lines[0] == "Subject,Description,Acq Date,ImageID"
     assert len(lines) == 2
 
     fields = lines[1].split(",")
-    assert fields == ["S_0001", "SCAN_A", "20200101", "SERIES01"]
+    assert fields == ["123_S_1234", "SCAN_A", "20200101", "SERIES01"]

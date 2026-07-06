@@ -20,22 +20,25 @@ The top-level README describes the protocol as 8 steps, each with its own subdir
 
 ### Step scripts (high-level orchestration)
 
-Each step is run directly via its own script, parameterized by `--config` (defaults to `config/config_adni.yaml`). See each step's `README.md` for details.
+There is no single wrapper per step; each step is run via the specific scripts
+in its directory, most of which accept `--config` (defaulting to
+`config/config_adni.yaml`). See each step's `README.md` for the authoritative
+command list. The main scripted entry points are:
 
 - Step 1 – fully manual (account setup, DUA), see `s1_setup_account/README.md`.
 - Step 2 – manual in the LONI IDA UI, see `s2_download/README.md`.
-- Step 3 – `bash s3_organize/run_s3_organize.sh --config config/config_adni.yaml` to unzip, organize, and QC the download.
-- Step 4 – `bash s4_clinica/run_clinica_adni2bids.sh --config config/config_adni.yaml` to run Clinica ADNI→BIDS conversion.
-- Step 5 – `bash s5_post_clinica_qc/run_post_clinica_qc.sh --config config/config_adni.yaml` for post-Clinica QC.
-- Step 6 – `bash s6_mriqc/run_mriqc_array.sh --config config/config_adni.yaml` to run MRIQC (participant/group); assumes Slurm or equivalent.
-- Step 7 – `bash s7_fmriprep/run_fmriprep_array.sh --config config/config_adni.yaml` to run fMRIPrep via Slurm/containers.
-- Step 8 – `bash s8_final_qc/run_final_qc.sh --config config/config_adni.yaml` to perform final QC and generate inclusion/exclusion tables.
+- Step 3 – `bash s3_organize/create_dicom_dir_csv.sh --config config/config_adni.yaml` to inventory the unzipped DICOM tree, plus `make_subject_list_for_conversions.sh` and the `dicom_download_qc.ipynb` notebook.
+- Step 4 – `bash s4_clinica/create_slurm_script_per_sub.sh --config config/config_adni.yaml`, then `adni_submit_slurm.sh` to submit, then `merge_individual_clinica.sh` to merge per-subject BIDS output.
+- Step 5 – `python main.py --config <cfg>` from inside `s5_post_clinica_qc/create_mastersheet/`, then `python s5_post_clinica_qc/create_report/run_session_heuristics.py` (plus the `create_report/main.ipynb` and `post_clinica_qc.ipynb` notebooks).
+- Step 6 – `bash s6_mriqc/adni_mriqc.slurm --config config/config_adni.yaml` (participant) and `sbatch s6_mriqc/mriqc_group.slurm` (group).
+- Step 7 – `bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml` to build fMRIPrep job arrays, with `fmriprep_error_report.py` and `rerun_fmriprep_bold_create_job_array.sh` for the error/rerun loop.
+- Step 8 – `s8_final_qc/summarize_motion_from_confounds.py`, `extract_euler_from_freesurfer.py`, and `finalize_inclusion.py` to produce the inclusion/exclusion tables.
 
 ### Environment and dependencies
 
 - Primary analysis environment: `env/env_adni.yml` (Python 3.11, scientific stack, PyYAML, pytest). Create and activate this before running most Python utilities, tests, or QC code.
 - Clinica environment: `env/env_clinica.yml` (Python 3.10, `dcm2niix`, `clinica`). Use this when installing and running Clinica for Step 4 if you prefer isolating Clinica dependencies from the main analysis environment.
-- Post-Clinica QC analysis has its own Python dependencies listed in `s5_post_clinica_qc/analysis/requirements.txt` (pandas, numpy, pydicom, nibabel, tqdm, plotly). Install these into the active environment before running the analysis scripts.
+- Post-Clinica QC analysis has its own Python dependencies listed in `s5_post_clinica_qc/requirements.txt` (pandas, numpy, pydicom, nibabel, tqdm, plotly). Install these into the active environment before running the analysis scripts.
 
 ### Config helper and Python utilities
 
@@ -47,14 +50,14 @@ Each step is run directly via its own script, parameterized by `--config` (defau
 
 ### Step-specific scripts and one-off commands
 
-These are the main non-Makefile entry points that future agents are likely to use or modify.
+These are the main entry points that future agents are likely to use or modify.
 
 #### Step 3 (organize DICOMs)
 
 - `s3_organize/create_dicom_dir_csv.sh`
   - Loops over the unzipped DICOM directory tree and writes a `dicom_dirs.csv` index of subject / scan / date directories.
   - Assumes you `cd` into the root of the unzipped DICOM tree and edit the hardcoded `cd /path/to/unzipped/dicom/directories/` line.
-- `s3_organize/dicom_dowload_qc.ipynb`
+- `s3_organize/dicom_download_qc.ipynb`
   - Jupyter notebook to compare unzipped dicom directories against LONI CSVs and isolate modalities of interest (T1w, T2w, rs-fMRI).
 
 #### Step 4 (Clinica on HPC)
@@ -70,11 +73,11 @@ These are the main non-Makefile entry points that future agents are likely to us
 
 #### Step 5 (post-Clinica QC data assembly)
 
-All code for assembling QC master tables lives under `s5_post_clinica_qc/analysis/create_mastersheet/`.
+All code for assembling QC master tables lives under `s5_post_clinica_qc/create_mastersheet/`.
 
-- Entry point: `s5_post_clinica_qc/analysis/create_mastersheet/main.py`
+- Entry point: `s5_post_clinica_qc/create_mastersheet/main.py`
   - Run from that directory after installing `requirements.txt`.
-  - Builds an "anchor" table joining Clinica `fmri_paths.tsv` metadata to filesystem paths; parses DICOM headers and BIDS NIfTI+JSON headers; and augments with structural MRI summary metrics. Outputs CSVs under `s5_post_clinica_qc/analysis/create_mastersheet/data/`.
+  - Builds an "anchor" table joining Clinica `fmri_paths.tsv` metadata to filesystem paths; parses DICOM headers and BIDS NIfTI+JSON headers; and augments with structural MRI summary metrics. Outputs CSVs under `s5_post_clinica_qc/create_mastersheet/data/`.
 - Core components:
   - `parsers/path_strategies/*.py`
     - `DefaultFlatStrategy` assumes a single Clinica `conversion_info` root containing versioned `v*/fmri_paths.tsv`, and infers BIDS NIfTI/JSON paths based on ADNI subject/session conventions.
@@ -90,11 +93,11 @@ All code for assembling QC master tables lives under `s5_post_clinica_qc/analysi
   - `parsers/structural_probe.StructuralProbe`
     - Given the merged DICOM+NIfTI table, walks back from each `NIfTI_path` to the session directory, searches modality-specific subfolders (default `anat/`), and records presence plus basic header metrics (dims, voxel sizes) for modalities like `T1w` and `FLAIR`.
 
-The downstream QC reporting notebook and helper scripts live under `s5_post_clinica_qc/analysis/create_report/` and `s5_post_clinica_qc/post_clinica_qc.ipynb`. They consume the master CSVs above and implement heuristics to decide which sessions proceed to MRIQC/fMRIPrep and write tables referenced in `config/config_adni.yaml` under `qc.*`.
+The downstream QC reporting notebook and helper scripts live under `s5_post_clinica_qc/create_report/` and `s5_post_clinica_qc/post_clinica_qc.ipynb`. They consume the master CSVs above and implement heuristics to decide which sessions proceed to MRIQC/fMRIPrep and write tables referenced in `config/config_adni.yaml` under `qc.*`.
 
 #### Step 7 (fMRIPrep orchestration and error analysis)
 
-- `s7_fmriprep/run_fmriprep_bids_filter_array_all_SW.sh`
+- `s7_fmriprep/run_fmriprep_bids_filter_array_all.sh`
   - Monolithic Slurm+Apptainer driver script tailored to a specific cluster.
   - Responsibilities:
     - Sets BIDS input (`idir`), fMRIPrep derivatives output (`odir`), working directories, and CSV of subject/session heuristics.
@@ -118,7 +121,7 @@ The downstream QC reporting notebook and helper scripts live under `s5_post_clin
 
 ### Quick debug runs for MRIQC and fMRIPrep
 
-For debugging or small test runs, you can invoke the MRIQC and fMRIPrep drivers directly instead of going through the `Makefile`:
+For debugging or small test runs, you can invoke the MRIQC and fMRIPrep drivers directly:
 
 - MRIQC participant-level driver (generates job arrays based on the heuristics CSV):
   - `bash s6_mriqc/adni_mriqc.slurm --config config/config_adni.yaml`
@@ -126,7 +129,7 @@ For debugging or small test runs, you can invoke the MRIQC and fMRIPrep drivers 
 - MRIQC group-level aggregation (after participant jobs finish):
   - `sbatch s6_mriqc/mriqc_group.slurm`
 - fMRIPrep participant-level driver:
-  - `bash s7_fmriprep/run_fmriprep_bids_filter_array_all_SW.sh --config config/config_adni.yaml`
+  - `bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml`
   - As with MRIQC, this writes one or more `fmriprep_array_*.slurm` scripts; submit only the subjects or arrays you care about while debugging.
 
 ### Tests
@@ -136,8 +139,8 @@ There is a pytest-based test suite under `utils/tests` that focuses on configura
 - `utils/tests/test_config_tools.py` exercises loading and querying the YAML config via `utils.config_tools`, including its CLI entry point (`python -m utils.config_tools ...`).
 - `utils/tests/test_create_dicom_dir_csv.py` verifies that `s3_organize/create_dicom_dir_csv.sh` reads `paths.raw_dicom_dir` from config and writes a well-formed `dicom_dirs.csv`.
 - `utils/tests/test_clinica_scripts.py` covers the Clinica helpers `s4_clinica/create_slurm_script_per_sub.sh` and `s4_clinica/merge_individual_clinica.sh`, checking both error paths (missing config values) and basic merge behavior.
-- `utils/tests/test_create_mastersheet_main.py` checks that `s5_post_clinica_qc/analysis/create_mastersheet/main.py` fails clearly when configured paths are invalid (and includes a skipped smoke test stub for a full run with patched parsers).
-- `utils/tests/test_run_session_heuristics.py` smoke-tests `s5_post_clinica_qc/analysis/create_report/run_session_heuristics.py`, ensuring it produces the expected TSVs and grouped per-subject CSV.
+- `utils/tests/test_create_mastersheet_main.py` checks that `s5_post_clinica_qc/create_mastersheet/main.py` fails clearly when configured paths are invalid (and includes a skipped smoke test stub for a full run with patched parsers).
+- `utils/tests/test_run_session_heuristics.py` smoke-tests `s5_post_clinica_qc/create_report/run_session_heuristics.py`, ensuring it produces the expected TSVs and grouped per-subject CSV.
 - `utils/tests/test_mriqc_scripts.py` adds lightweight integration tests for `s6_mriqc/adni_mriqc.slurm` and `s6_mriqc/mriqc_group.slurm`, using stub `module`/`apptainer` binaries to validate config handling, required-key enforcement, image-building behavior, and BIDS-root checks.
 - `utils/tests/test_fmriprep_scripts.py` mirrors the MRIQC tests for `s7_fmriprep/run_fmriprep_bids_filter_array_all.sh` and `s7_fmriprep/rerun_fmriprep_bold_create_job_array.sh`, including rerun-list generation from an error report.
 
@@ -174,7 +177,7 @@ The repository is organized around an 8-step pipeline, with a mixture of manual 
      - Attach DICOM header features, NIfTI+JSON metadata, and structural MRI header features.
      - Feed this combined table into a QC notebook that applies heuristics and writes subject/session lists and QC decision tables consumed by MRIQC/fMRIPrep.
 6. **MRIQC (`s6_mriqc/`)**
-   - README placeholder; Makefile expects a `run_mriqc_array.sh` wrapper that uses MRIQC-related config fields in `config/config_adni.yaml` and Slurm to run participant and group-level analyses.
+   - Runs MRIQC via `s6_mriqc/adni_mriqc.slurm` (participant level) and `s6_mriqc/mriqc_group.slurm` (group level), using MRIQC-related config fields in `config/config_adni.yaml` and Slurm.
 7. **fMRIPrep (`s7_fmriprep/`)**
    - Cluster-specific job-array orchestration scripts and error-analysis utilities, with Apptainer/Singularity used to run nipreps/fMRIPrep containers against the BIDS dataset and write derivatives to a configured `output_dir`.
 8. **Final QC (`s8_final_qc/`)**
@@ -194,7 +197,7 @@ Future changes to paths or resource settings should generally flow through this 
 
 ### Post-Clinica analysis code structure
 
-Within `s5_post_clinica_qc/analysis/create_mastersheet/` the code is organized as a small library to be reused or extended:
+Within `s5_post_clinica_qc/create_mastersheet/` the code is organized as a small library to be reused or extended:
 
 - **Path strategies** abstract over how Clinica `conversion_info` is stored (`default_flat` vs `per_subject`).
 - **AnchorTable** loads, deduplicates, and augments Clinica path tables, caching both the derived CSV and a hash to avoid unnecessary recomputation.
@@ -207,7 +210,7 @@ When extending the QC feature set (e.g., new DICOM fields, new MRI-derived metri
 
 The `s7_fmriprep` directory encodes a feedback loop for handling large-scale fMRIPrep runs:
 
-1. Launch a large job array over subjects using a containerized fMRIPrep script (e.g., `run_fmriprep_bids_filter_array_all_SW.sh` or a derivative using `config/config_adni.yaml`).
+1. Launch a large job array over subjects using a containerized fMRIPrep script (e.g., `run_fmriprep_bids_filter_array_all.sh` or a derivative using `config/config_adni.yaml`).
 2. Collect Slurm logs and fMRIPrep crashfiles.
 3. Run `fmriprep_error_report.py` to categorize failures and produce a CSV of issues by subject/session.
 4. Use `rerun_fmriprep_bold_create_job_array.sh` to compute a clean set of subjects that both have BOLD on disk and lack preprocessed outputs, and to generate rerun input lists.
@@ -221,4 +224,4 @@ This loop is central to scaling fMRIPrep across many ADNI sessions while systema
   - Bind-mounted paths (`--bind` flags) matching `config/config_adni.yaml`.
   - Workdir and derivatives paths being writable and large enough for intermediate files.
   - FreeSurfer license management: avoid hardcoding license contents in new scripts; bind an external license file instead.
-- When modifying or adding pipeline steps, keep the 8-step structure and the central role of `config/config_adni.yaml` in mind so that new components can be orchestrated via the `Makefile` and/or future wrappers.
+- When modifying or adding pipeline steps, keep the 8-step structure and the central role of `config/config_adni.yaml` in mind so that new components can be orchestrated via the per-step scripts reading from that config.

@@ -1,4 +1,4 @@
-"""Tests for s5_post_clinica_qc/analysis/create_mastersheet/main.py.
+"""Tests for s5_post_clinica_qc/create_mastersheet/main.py.
 
 These focus on config handling and failure modes, not full data parsing.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MAIN_DIR = REPO_ROOT / "s5_post_clinica_qc" / "analysis" / "create_mastersheet"
+MAIN_DIR = REPO_ROOT / "s5_post_clinica_qc" / "create_mastersheet"
 
 
 def test_main_errors_when_paths_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,15 +32,11 @@ def test_main_errors_when_paths_missing(tmp_path: Path, monkeypatch: pytest.Monk
         encoding="utf-8",
     )
 
+    # main.py imports its sibling ``parsers``/``config`` packages by name, so it
+    # must be run as a script from its own directory rather than via ``-m``.
     result = subprocess.run(
-        [
-            "python",
-            "-m",
-            "s5_post_clinica_qc.analysis.create_mastersheet.main",
-            "--config",
-            str(cfg),
-        ],
-        cwd=str(REPO_ROOT),
+        ["python", "main.py", "--config", str(cfg)],
+        cwd=str(MAIN_DIR),
         check=False,
         capture_output=True,
         text=True,
@@ -135,14 +131,8 @@ def test_main_runs_with_stubbed_parsers(tmp_path: Path, monkeypatch: pytest.Monk
 
     # Run the module as a script with the stubbed components
     result = subprocess.run(
-        [
-            "python",
-            "-m",
-            "s5_post_clinica_qc.analysis.create_mastersheet.main",
-            "--config",
-            str(cfg_path),
-        ],
-        cwd=str(REPO_ROOT),
+        ["python", "main.py", "--config", str(cfg_path)],
+        cwd=str(MAIN_DIR),
         check=False,
         capture_output=True,
         text=True,

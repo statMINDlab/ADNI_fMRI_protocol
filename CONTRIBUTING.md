@@ -9,7 +9,7 @@ This repository is primarily maintained by the authors of the ADNI rs-fMRI proto
 3. Install the post-Clinica analysis dependencies if you plan to touch that code:
 
    ```bash
-   pip install -r s5_post_clinica_qc/analysis/requirements.txt
+   pip install -r s5_post_clinica_qc/requirements.txt
    ```
 
 4. Ensure `pytest`, `ruff`, and `shellcheck` are available (CI will run all three).

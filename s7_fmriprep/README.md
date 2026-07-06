@@ -6,7 +6,7 @@ As with MRIQC, all paths and most Slurm settings are configured via `config/conf
 
 ## 7.1) Participant-level fMRIPrep (array jobs)
 
-The main driver script is `s7_fmriprep/run_fmriprep_bids_filter_array_all_SW.sh` (or a local variant). At a high level, it:
+The main driver script is `s7_fmriprep/run_fmriprep_bids_filter_array_all.sh` (or a local variant). At a high level, it:
 
 1. Resolves the BIDS input directory, fMRIPrep derivatives directory, work directory, TemplateFlow cache directory, and container image path from `config/config_adni.yaml` (for example, `fmriprep.bids_dir`, `fmriprep.output_dir`, `fmriprep.work_dir`, `paths.templateflow_cache`, `containers.fmriprep_image`).
 2. Ensures the required directories exist and writes a minimal `dataset_description.json` into the BIDS root if needed.
@@ -28,7 +28,7 @@ Inspect and adjust the generated `fmriprep_array_*.slurm` scripts as needed for 
 To check configuration and array layout without loading Apptainer or writing job scripts, use the driver in dry-run mode:
 
 ```bash
-bash s7_fmriprep/run_fmriprep_bids_filter_array_all_SW.sh --config config/config_adni.yaml --dry-run
+bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml --dry-run
 ```
 
 This prints, for each CSV chunk, which `fmriprep_array_*.slurm` script would be created and how many array entries it would contain.

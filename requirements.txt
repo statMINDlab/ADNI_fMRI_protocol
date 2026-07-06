@@ -1,3 +1,26 @@
-IPython
+# Python dependencies for the ADNI rs-fMRI pipeline utilities, QC/analysis
+# scripts, and test suite. This mirrors the Python packages in
+# env/env_adni.yml for users who prefer pip/venv over conda.
+#
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Note: the neuroimaging tools themselves (Clinica, dcm2niix, MRIQC, fMRIPrep,
+# FreeSurfer) are run via conda (env/env_clinica.yml) and containers, not pip.
 
-IPython
+# Scientific stack
+numpy
+pandas
+pydicom
+nibabel
+tqdm
+
+# Plotting / notebooks
+plotly
+ipython
+
+# Config / YAML
+PyYAML
+
+# Testing
+pytest
