@@ -1,0 +1,492 @@
+"""Insert SliceTiming into Philips BOLD sidecars after Clinica BIDS conversion.
+
+Background
+----------
+dcm2niix (and therefore Clinica) frequently cannot recover slice-acquisition
+timing from Philips DICOMs, so the BOLD JSON sidecars it writes for Philips
+scans have no ``SliceTiming`` field. Without it, fMRIPrep cannot perform
+slice-time correction.
+
+ADNI distributes the true per-slice acquisition times in the Mayo fMRI QC table
+(``MAYOADIRL_MRI_FMRI_NFQ_*.csv``, config key ``paths.adni_fmri_metadata_csv``).
+Its ``SLICETIMING`` column stores each slice's *absolute* acquisition clock time
+(seconds-of-day, underscore separated). BIDS ``SliceTiming`` wants times relative
+to the start of each volume, so we subtract the minimum of the array.
+
+This step runs after ``s4_clinica`` (once the merged BIDS tree exists) and before
+``s5_post_clinica_qc``. It only touches scans whose sidecar ``Manufacturer``
+matches ``slice_timing.manufacturers`` and (by default) that lack SliceTiming.
+
+Matching
+--------
+Each Philips ``*_bold.json`` is matched to an ADNI metadata row by:
+  * subject: the numeric RID parsed from ``sub-ADNI<site>S<rid>`` == metadata ``RID``
+  * session: the BIDS ``ses-<label>`` == metadata ``VISCODE2`` mapped to a session
+             label (``bl`` -> ``M000``, ``m<NN>`` -> ``M0NN``)
+  * series number (tiebreaker when a session has more than one candidate)
+A match is only accepted if the slice count and TR are consistent with the
+sidecar, otherwise it is reported as ``validation_failed`` and left untouched.
+
+Usage
+-----
+    python s4b_slice_timing/insert_philips_slicetiming.py --config config/config_adni.yaml
+    python s4b_slice_timing/insert_philips_slicetiming.py --dry-run   # report only
+
+Nothing is written in ``--dry-run`` mode; the report TSV is always written.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import re
+import shutil
+import sys
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+# Ensure repo root is importable so ``utils.config_tools`` resolves regardless of cwd.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from utils.config_tools import load_config, get_value  # noqa: E402
+
+
+# --------------------------------------------------------------------------- #
+# Parsing helpers
+# --------------------------------------------------------------------------- #
+def parse_abs_slice_timing(raw: str) -> List[float]:
+    """Parse an underscore-separated ADNI SLICETIMING string into relative times.
+
+    The ADNI values are absolute acquisition clock times; BIDS wants times
+    relative to the earliest-acquired slice, so we subtract the minimum.
+    Raises ValueError if the string is empty or non-numeric.
+    """
+
+    parts = [p for p in str(raw).strip().split("_") if p != ""]
+    if not parts:
+        raise ValueError("empty SLICETIMING")
+    abs_times = [float(p) for p in parts]
+    origin = min(abs_times)
+    return [round(t - origin, 6) for t in abs_times]
+
+
+def acquisition_pattern(rel_times: List[float], preview: int = 3) -> str:
+    """Return the 1-indexed slice acquisition order as e.g. ``(1, 3, 5, ...)``.
+
+    Slice index 0 is the first slice along the acquisition axis; the returned
+    order lists which slice (1-indexed) was acquired 1st, 2nd, 3rd, ...
+    """
+
+    order = sorted(range(len(rel_times)), key=lambda i: rel_times[i])
+    head = ", ".join(str(i + 1) for i in order[:preview])
+    return f"({head}, ...)"
+
+
+_SESSION_RE = re.compile(r"^m(\d+)$", re.IGNORECASE)
+
+
+def viscode_to_session(viscode2: str) -> Optional[str]:
+    """Map an ADNI VISCODE2 to a Clinica BIDS session label (without ``ses-``)."""
+
+    v = str(viscode2).strip().lower()
+    if v in ("bl", "m0", "m00", "m000"):
+        return "M000"
+    m = _SESSION_RE.match(v)
+    if m:
+        return f"M{int(m.group(1)):03d}"
+    return None  # screening / unknown codes are not represented in the BIDS tree
+
+
+_RID_RE = re.compile(r"S(\d+)\b")
+
+
+def subject_to_rid(sub_label: str) -> Optional[int]:
+    """Parse the numeric RID from a BIDS subject label like ``sub-ADNI002S0413``."""
+
+    m = _RID_RE.search(str(sub_label))
+    return int(m.group(1)) if m else None
+
+
+def path_subject_session(json_path: Path) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(sub-label, ses-label)`` inferred from a sidecar path."""
+
+    sub = ses = None
+    # Only look at directory components; the filename also starts with "sub-".
+    for part in json_path.parent.parts:
+        if part.startswith("sub-"):
+            sub = part
+        elif part.startswith("ses-"):
+            ses = part
+    return sub, ses
+
+
+# --------------------------------------------------------------------------- #
+# Metadata index
+# --------------------------------------------------------------------------- #
+class MetadataRecord:
+    """One ADNI fMRI-metadata row reduced to what this step needs."""
+
+    __slots__ = ("rid", "session", "series_number", "tr_s", "rel_times",
+                 "n_slices", "pattern")
+
+    def __init__(self, rid: int, session: str, series_number: str, tr_s: float,
+                 rel_times: List[float], pattern: str) -> None:
+        self.rid = rid
+        self.session = session
+        self.series_number = series_number
+        self.tr_s = tr_s
+        self.rel_times = rel_times
+        self.n_slices = len(rel_times)
+        self.pattern = pattern
+
+
+def _manufacturer_matches(value: str, needles: Iterable[str]) -> bool:
+    v = str(value).lower()
+    return any(str(n).lower() in v for n in needles)
+
+
+def load_metadata_index(
+    csv_path: Path, manufacturers: Iterable[str]
+) -> Dict[Tuple[int, str], List[MetadataRecord]]:
+    """Build ``{(rid, session): [MetadataRecord, ...]}`` for target manufacturers.
+
+    Rows that are not from a target manufacturer, whose VISCODE2 has no BIDS
+    session equivalent, or whose SLICETIMING is unparseable are skipped.
+    """
+
+    index: Dict[Tuple[int, str], List[MetadataRecord]] = {}
+    with csv_path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"RID", "VISCODE2", "MANUFACTURER", "REPETITIONTIME", "SLICETIMING"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(
+                f"{csv_path} is missing required columns: {sorted(missing)}"
+            )
+        for row in reader:
+            if not _manufacturer_matches(row.get("MANUFACTURER", ""), manufacturers):
+                continue
+            try:
+                rid = int(str(row["RID"]).strip())
+            except (ValueError, KeyError):
+                continue
+            session = viscode_to_session(row.get("VISCODE2", ""))
+            if session is None:
+                continue
+            try:
+                rel = parse_abs_slice_timing(row.get("SLICETIMING", ""))
+            except ValueError:
+                continue
+            try:
+                tr_s = float(row.get("REPETITIONTIME", "")) / 1000.0
+            except ValueError:
+                tr_s = float("nan")
+            rec = MetadataRecord(
+                rid=rid,
+                session=session,
+                series_number=str(row.get("SERIESNUMBER", "")).strip(),
+                tr_s=tr_s,
+                rel_times=rel,
+                pattern=acquisition_pattern(rel),
+            )
+            index.setdefault((rid, session), []).append(rec)
+    return index
+
+
+# --------------------------------------------------------------------------- #
+# Sidecar handling
+# --------------------------------------------------------------------------- #
+def _nii_for(json_path: Path) -> Optional[Path]:
+    for ext in (".nii.gz", ".nii"):
+        cand = json_path.with_name(json_path.stem + ext)
+        if cand.exists():
+            return cand
+    return None
+
+
+def nifti_n_slices(nii_path: Path) -> Optional[int]:
+    """Return the slice count (3rd dim) of a NIfTI, or None if unreadable."""
+
+    try:
+        import nibabel as nib  # local import: keep nibabel optional
+    except Exception:
+        return None
+    try:
+        shape = nib.load(str(nii_path)).shape
+        return int(shape[2]) if len(shape) >= 3 else None
+    except Exception:
+        return None
+
+
+def choose_record(
+    candidates: List[MetadataRecord],
+    series_number: Optional[str],
+    n_slices: Optional[int],
+    tr_s: Optional[float],
+    tr_tol: float,
+) -> Tuple[Optional[MetadataRecord], str]:
+    """Pick the single matching record from candidates, or explain why not."""
+
+    if not candidates:
+        return None, "unmatched"
+
+    pool = candidates
+    # Prefer an exact series-number match when the sidecar provides one.
+    if series_number:
+        exact = [c for c in pool if c.series_number == str(series_number)]
+        if len(exact) == 1:
+            return exact[0], "matched_series"
+        if exact:
+            pool = exact
+
+    # Narrow by slice count and TR when available.
+    if n_slices is not None:
+        by_slices = [c for c in pool if c.n_slices == n_slices]
+        if by_slices:
+            pool = by_slices
+    if tr_s is not None:
+        by_tr = [c for c in pool if _tr_close(c.tr_s, tr_s, tr_tol)]
+        if by_tr:
+            pool = by_tr
+
+    if len(pool) == 1:
+        return pool[0], "matched"
+    return None, "ambiguous"
+
+
+def _tr_close(a: float, b: float, tol: float) -> bool:
+    try:
+        return abs(a - b) <= tol
+    except (TypeError, ValueError):
+        return False
+
+
+def process_sidecar(
+    json_path: Path,
+    index: Dict[Tuple[int, str], List[MetadataRecord]],
+    opts: "Options",
+) -> Dict[str, Any]:
+    """Match one sidecar and (unless dry-run) write SliceTiming. Returns a report row."""
+
+    sub, ses = path_subject_session(json_path)
+    rec_row: Dict[str, Any] = {
+        "participant": sub or "",
+        "session": ses or "",
+        "json_path": str(json_path),
+        "manufacturer": "",
+        "status": "",
+        "series_number": "",
+        "n_slices": "",
+        "tr_s": "",
+        "slice_pattern": "",
+        "flagged": "",
+        "message": "",
+    }
+
+    try:
+        with json_path.open() as f:
+            data = json.load(f)
+    except Exception as e:  # unreadable/invalid JSON
+        rec_row["status"] = "error"
+        rec_row["message"] = f"could not read sidecar: {e}"
+        return rec_row
+
+    manufacturer = str(data.get("Manufacturer", ""))
+    rec_row["manufacturer"] = manufacturer
+    if not _manufacturer_matches(manufacturer, opts.manufacturers):
+        rec_row["status"] = "skipped_not_target"
+        return rec_row
+
+    existing = data.get("SliceTiming")
+    if opts.skip_if_present and existing:
+        rec_row["status"] = "skipped_present"
+        return rec_row
+
+    rid = subject_to_rid(sub or "")
+    session = viscode_to_session(ses.replace("ses-", "")) if ses else None
+    if rid is None or session is None:
+        rec_row["status"] = "unmatched"
+        rec_row["message"] = "could not derive RID/session from path"
+        return rec_row
+
+    nii = _nii_for(json_path)
+    n_slices = nifti_n_slices(nii) if nii else None
+    tr_json = data.get("RepetitionTime")
+    tr_json = float(tr_json) if isinstance(tr_json, (int, float)) else None
+
+    record, why = choose_record(
+        index.get((rid, session), []),
+        series_number=str(data.get("SeriesNumber", "")).strip() or None,
+        n_slices=n_slices,
+        tr_s=tr_json,
+        tr_tol=opts.tr_tolerance_s,
+    )
+    if record is None:
+        rec_row["status"] = why
+        return rec_row
+
+    rec_row["series_number"] = record.series_number
+    rec_row["n_slices"] = record.n_slices
+    rec_row["tr_s"] = record.tr_s
+    rec_row["slice_pattern"] = record.pattern
+    flagged = record.pattern != opts.standard_slice_pattern
+    rec_row["flagged"] = "yes" if flagged else "no"
+
+    # Validate against the sidecar/NIfTI before trusting the match.
+    if n_slices is not None and n_slices != record.n_slices:
+        rec_row["status"] = "validation_failed"
+        rec_row["message"] = f"NIfTI has {n_slices} slices, metadata has {record.n_slices}"
+        return rec_row
+    if tr_json is not None and not _tr_close(record.tr_s, tr_json, opts.tr_tolerance_s):
+        rec_row["status"] = "validation_failed"
+        rec_row["message"] = f"sidecar TR {tr_json}s vs metadata TR {record.tr_s}s"
+        return rec_row
+
+    if flagged and not opts.write_flagged:
+        rec_row["status"] = "skipped_flagged"
+        rec_row["message"] = f"non-standard pattern {record.pattern}; write_flagged=false"
+        return rec_row
+
+    if opts.dry_run:
+        rec_row["status"] = "would_write_flagged" if flagged else "would_write"
+        return rec_row
+
+    if opts.backup_json:
+        backup = json_path.with_suffix(json_path.suffix + ".bak")
+        if not backup.exists():
+            shutil.copy2(json_path, backup)
+
+    data["SliceTiming"] = record.rel_times
+    with json_path.open("w") as f:
+        json.dump(data, f, indent=4)
+        f.write("\n")
+
+    rec_row["status"] = "written_flagged" if flagged else "written"
+    return rec_row
+
+
+# --------------------------------------------------------------------------- #
+# Orchestration
+# --------------------------------------------------------------------------- #
+class Options:
+    def __init__(self, cfg: Dict[str, Any]) -> None:
+        st = cfg.get("slice_timing", {}) or {}
+        self.manufacturers = st.get("manufacturers", ["Philips"])
+        self.standard_slice_pattern = st.get("standard_slice_pattern", "(1, 3, 5, ...)")
+        self.write_flagged = bool(st.get("write_flagged", True))
+        self.skip_if_present = bool(st.get("skip_if_present", True))
+        self.backup_json = bool(st.get("backup_json", True))
+        self.tr_tolerance_s = float(st.get("tr_tolerance_s", 0.1))
+        # Which sidecars to touch, relative to the BIDS root. Defaults to the
+        # resting-state BOLD JSON only (ADNI fMRI is resting state).
+        self.bold_json_glob = st.get("bold_json_glob", "sub-*/**/func/*task-rest_bold.json")
+        self.dry_run = False
+
+
+REPORT_COLUMNS = [
+    "participant", "session", "json_path", "manufacturer", "status",
+    "series_number", "n_slices", "tr_s", "slice_pattern", "flagged", "message",
+]
+
+
+def find_bold_sidecars(bids_dir: Path, pattern: str) -> List[Path]:
+    return sorted(bids_dir.glob(pattern))
+
+
+def write_report(rows: List[Dict[str, Any]], report_path: Path) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with report_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=REPORT_COLUMNS, delimiter="\t")
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in REPORT_COLUMNS})
+
+
+def run(
+    config_path: Optional[str] = None,
+    bids_dir: Optional[str] = None,
+    metadata_csv: Optional[str] = None,
+    report_tsv: Optional[str] = None,
+    dry_run: bool = False,
+) -> Dict[str, int]:
+    """Repair Philips SliceTiming across a BIDS tree. Returns a status->count summary."""
+
+    cfg = load_config(config_path)
+    opts = Options(cfg)
+    opts.dry_run = dry_run
+
+    bids_path = Path(bids_dir or get_value(cfg, "paths.clinica_bids_dir"))
+    if not bids_path.is_dir():
+        raise FileNotFoundError(f"BIDS directory not found: {bids_path}")
+
+    csv_path = Path(metadata_csv or get_value(cfg, "paths.adni_fmri_metadata_csv"))
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"ADNI fMRI metadata CSV not found: {csv_path}")
+
+    if report_tsv is None:
+        try:
+            report_tsv = get_value(cfg, "slice_timing.report_tsv")
+        except KeyError:
+            report_tsv = "s4b_slice_timing/slice_timing_report.tsv"
+    report_path = Path(report_tsv)
+    if not report_path.is_absolute():
+        report_path = REPO_ROOT / report_path
+
+    index = load_metadata_index(csv_path, opts.manufacturers)
+    sidecars = find_bold_sidecars(bids_path, opts.bold_json_glob)
+
+    rows = [process_sidecar(js, index, opts) for js in sidecars]
+    write_report(rows, report_path)
+
+    summary: Dict[str, int] = {}
+    for r in rows:
+        summary[r["status"]] = summary.get(r["status"], 0) + 1
+
+    mode = "DRY RUN — no sidecars modified" if dry_run else "sidecars updated in place"
+    print(f"[insert_philips_slicetiming] {mode}")
+    print(f"  BIDS dir : {bids_path}")
+    print(f"  metadata : {csv_path} ({len(index)} target subject/session groups)")
+    print(f"  sidecars : {len(sidecars)} resting-state BOLD JSONs scanned ({opts.bold_json_glob})")
+    for status in sorted(summary):
+        print(f"    {status}: {summary[status]}")
+    print(f"  report   : {report_path}")
+    return summary
+
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("--config", dest="config_path", default=None,
+                   help="Path to YAML config (default: $ADNI_CONFIG or config/config_adni.yaml).")
+    p.add_argument("--bids-dir", default=None,
+                   help="Override paths.clinica_bids_dir.")
+    p.add_argument("--metadata-csv", default=None,
+                   help="Override paths.adni_fmri_metadata_csv.")
+    p.add_argument("--report-tsv", default=None,
+                   help="Override slice_timing.report_tsv.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Report what would change without modifying any sidecars.")
+    return p.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
+    try:
+        run(
+            config_path=args.config_path,
+            bids_dir=args.bids_dir,
+            metadata_csv=args.metadata_csv,
+            report_tsv=args.report_tsv,
+            dry_run=args.dry_run,
+        )
+    except (FileNotFoundError, ValueError, KeyError) as e:
+        print(f"[insert_philips_slicetiming] {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -15,7 +15,7 @@ The output of this protocol is high-quality, preprocessed rs-fMRI data in fs-LR 
 3. Edit `config/config_adni.yaml` with your local paths, container locations, and cluster settings.
 4. (Optional but recommended) Skim the step-specific READMEs below to understand manual vs automated pieces.
 5. Download data via the LONI IDA web UI following `s1_setup_account/README.md` and `s2_download/README.md`.
-6. Run the automated steps directly using the scripts described in each step's `README.md` (`s3_organize/`, `s4_clinica/`, `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, `s8_final_qc/`).
+6. Run the automated steps directly using the scripts described in each step's `README.md` (`s3_organize/`, `s4_clinica/`, `s4b_slice_timing/`, `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, `s8_final_qc/`).
 7. Inspect QC reports and tables in `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, and `s8_final_qc/`.
 8. Use the final inclusion tables (for example, `included_sessions.tsv`) for downstream analyses.
 
@@ -47,6 +47,9 @@ flowchart TB
   %% Step 4: Clinica
   S4["Step 4: Clinica DICOM→NIfTI+BIDS (s4_clinica)"]
 
+  %% Step 4b: repair Philips SliceTiming
+  S4B["Step 4b: Insert Philips SliceTiming (s4b_slice_timing)"]
+
   %% Step 5: Post-Clinica QC (mastersheet + heuristics)
   S5a["Step 5a: Create mastersheet create_mastersheet/main.py"]
   S5b["Step 5b: Run heuristics create_report/run_session_heuristics.py"]
@@ -61,6 +64,7 @@ flowchart TB
   %% Data nodes
   RAW_DICOM["Unzipped DICOM tree"]
   BIDS["Clinica BIDS dataset (paths.clinica_bids_dir)"]
+  ADNI_META["ADNI fMRI metadata (MAYOADIRL_MRI_FMRI_NFQ csv)"]
   ANCHOR["anchor_plus_dicom_nifti_struct.csv (Step 5 mastersheet)"]
   HEUR_SESS["final_heuristics.tsv (qc.heuristics_final_table) (session-level)"]
   HEUR_SUBJ["post_Clinica.csv (paths.fmriprep_heuristics_csv) (subject-level)"]
@@ -73,7 +77,8 @@ flowchart TB
   S2 --> RAW_ZIPS
   RAW_ZIPS --> S3 --> RAW_DICOM
   RAW_DICOM --> S4 --> BIDS
-  BIDS --> S5a --> ANCHOR
+  BIDS --> S4B --> S5a --> ANCHOR
+  ADNI_META --> S4B
   ANCHOR --> S5b
   S5b --> HEUR_SESS
   S5b --> HEUR_SUBJ
@@ -85,6 +90,7 @@ flowchart TB
   %% Config-driven edges (dashed, unlabeled for clarity)
   CFG -.-> S3
   CFG -.-> S4
+  CFG -.-> S4B
   CFG -.-> S5a
   CFG -.-> S6
   CFG -.-> S7
@@ -106,6 +112,14 @@ See `s3_organize/README.md`.
 ## Step 4.) Run Clinica (DICOM→NIfTI and BIDS-ify)
 
 See `s4_clinica/README.md`.
+
+## Step 4b.) Insert SliceTiming into Philips scans
+
+See `s4b_slice_timing/README.md`. Clinica/`dcm2niix` cannot recover slice timing
+from most Philips DICOMs, so their BOLD sidecars lack `SliceTiming` and fMRIPrep
+skips slice-time correction. This step fills `SliceTiming` from the ADNI fMRI
+metadata table (`MAYOADIRL_MRI_FMRI_NFQ`). Run it after the merged BIDS tree
+exists and before Step 5.
 
 ## Step 5.) Post-Clinica Quality Control
 
