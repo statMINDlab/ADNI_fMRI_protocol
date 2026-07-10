@@ -112,3 +112,63 @@ python s8_final_qc/finalize_inclusion.py \
 ```
 
 The resulting `included_sessions.tsv` and `excluded_sessions.tsv` should be referenced under `qc.*` in `config/config_adni.yaml` and can be used as the canonical inclusion tables for downstream analyses.
+
+## 8.4) Pipeline sample-size table
+
+The "how many subjects/sessions are kept and dropped at each stage" table (for
+the README, the manuscript, or slides) is produced by two small scripts that
+share one manifest, `s8_final_qc/sample_size_stages.tsv` (config `sample_size.*`):
+
+- **`collect_sample_sizes.py`** derives the per-stage counts *from the real
+  pipeline outputs* and writes them into the manifest.
+- **`make_sample_size_table.py`** renders the manifest as Markdown / HTML / CSV.
+
+### Deriving the counts (`collect_sample_sizes.py`)
+
+Each stage is represented as a **set of `(sub, ses)` BIDS ids**, so subjects and
+sessions kept are the size of that set and the "Dropped" counts are set
+differences. A subject is counted as dropped at the stage where their last
+surviving session disappears.
+
+| Stage | id-set source |
+| --- | --- |
+| Start | every session in the Step-5 mastersheet (`sample_size.mastersheet_csv`) |
+| BIDS via Clinica | Step-5 `SessionFilterPipeline` phase-0 survivors (BIDS errors, missing NIfTI/JSON, missing T1w) |
+| Post-Clinica QC | Step-5 pipeline final survivors (TR / scan-depth / duration / FOV / coil) |
+| MRIQC | Step-5 survivors **that have MRIQC output** — the drop is exactly "in Step-5 output but not in MRIQC" (`mriqc_iqms_table`) |
+| Post-MRIQC QC | MRIQC rows with `mriqc_exclude_col == 0` |
+| fMRIPrep | sessions fMRIPrep completed (`fmriprep_sessions_table`, e.g. `motion_summary.tsv`) |
+| Final QC | `final_inclusion_table` (`included_sessions.tsv`) |
+
+```bash
+# Derive counts from the pipeline outputs and update the manifest:
+python s8_final_qc/collect_sample_sizes.py --config config/config_adni.yaml
+
+# Preview without writing the manifest:
+python s8_final_qc/collect_sample_sizes.py --print-only
+```
+
+Run this with the `env_adni` environment active (it imports the Step-5 pipeline).
+For an exact monotonic cascade, the mastersheet, MRIQC, fMRIPrep, and inclusion
+tables should all come from the **same data run**; the script prints a note for
+each session that a downstream table gains relative to the previous stage (a sign
+the inputs are from different snapshots).
+
+### Rendering the table (`make_sample_size_table.py`)
+
+Reads the manifest and writes the table. The `Dropped (Sub/Ses)` column is derived
+as the drop from the previous stage, so it is always internally consistent. You
+can also hand-edit the manifest (or set a row's `count_from` to a `sub`/`ses`
+table to auto-count just that row) if you are not using the collector.
+
+```bash
+# Markdown to stdout (paste into a README):
+python s8_final_qc/make_sample_size_table.py
+
+# Styled HTML you can screenshot for a paper/slide:
+python s8_final_qc/make_sample_size_table.py --format html --output s8_final_qc/sample_size_table.html
+
+# CSV:
+python s8_final_qc/make_sample_size_table.py --format csv --output s8_final_qc/sample_size_table.csv
+```
+
