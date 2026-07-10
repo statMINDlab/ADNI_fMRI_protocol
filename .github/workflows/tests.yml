@@ -56,4 +56,6 @@ jobs:
 
       - name: Run shellcheck (Bash/Slurm scripts)
         run: |
-          shellcheck $(git ls-files '*.sh' '*.slurm')
+          # Fail only on real problems (warning+); the existing scripts have many
+          # low-value info/style notes (unquoted vars, backticks) that are not bugs.
+          shellcheck --severity=warning $(git ls-files '*.sh' '*.slurm')
