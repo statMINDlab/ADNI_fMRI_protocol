@@ -16,6 +16,10 @@
 #   --subjects "A B ..." Run only these subjects (space-separated ADNI ids or
 #                        BIDS labels), instead of the config heuristics CSV.
 #   --subject-list FILE  Run only the subjects listed one-per-line in FILE.
+#   --sessions-csv FILE  Run only specific subject/sessions. FILE is a CSV with a
+#                        subject column (SUBJECT_ID/PTID/RID) and a visit column
+#                        (VISCODE/VISCODE2); a per-subject fMRIPrep BIDS filter is
+#                        generated so only those sessions are processed.
 #   --subjects-csv FILE  Use FILE instead of paths.fmriprep_heuristics_csv.
 #   --ignore-done        Do not skip subjects that already have a .done marker
 #                        (use this to re-run subjects, e.g. after SliceTiming injection).
@@ -23,16 +27,19 @@
 #
 set -euo pipefail
 
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH=""
 DRY_RUN=0
 SUBJECTS_INLINE=""
 SUBJECT_LIST_FILE=""
+SESSIONS_CSV=""
 SUBJECTS_CSV_OVERRIDE=""
 IGNORE_DONE=0
 
 usage() {
   echo "Usage: $0 [--config cfg.yaml] [--subjects \"002_S_0413 130_S_1234\"]" >&2
-  echo "          [--subject-list FILE] [--subjects-csv FILE] [--ignore-done] [--dry-run]" >&2
+  echo "          [--subject-list FILE] [--sessions-csv FILE] [--subjects-csv FILE]" >&2
+  echo "          [--ignore-done] [--dry-run]" >&2
 }
 
 # Normalize a subject token (002_S_0413 | sub-ADNI002S0413 | ADNI002S0413) to
@@ -57,6 +64,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --subject-list)
       SUBJECT_LIST_FILE="$2"
+      shift 2
+      ;;
+    --sessions-csv)
+      SESSIONS_CSV="$2"
       shift 2
       ;;
     --subjects-csv)
@@ -101,10 +112,14 @@ else
   fs_license=$(python -m utils.config_tools containers.freesurfer_license)
 fi
 
-# A CLI subject list (inline or file) takes precedence over any CSV.
+# A CLI subject list (inline / file / sessions CSV) takes precedence over any CSV.
 USE_SUBJECT_LIST=0
-if [[ -n "$SUBJECTS_INLINE" || -n "$SUBJECT_LIST_FILE" ]]; then
+if [[ -n "$SUBJECTS_INLINE" || -n "$SUBJECT_LIST_FILE" || -n "$SESSIONS_CSV" ]]; then
   USE_SUBJECT_LIST=1
+fi
+if [[ -n "$SESSIONS_CSV" && ! -f "$SESSIONS_CSV" ]]; then
+  echo "[run_fmriprep] Sessions CSV not found: $SESSIONS_CSV" >&2
+  exit 1
 fi
 # Allow overriding the heuristics CSV without editing the config.
 if [[ -n "$SUBJECTS_CSV_OVERRIDE" ]]; then
@@ -191,6 +206,18 @@ maybe_add() {
 
 if [[ "$USE_SUBJECT_LIST" -eq 1 ]]; then
     echo "Building job array from the provided subject list..."
+    # Subject/session CSV: write per-subject BIDS filters and take the subjects
+    # from the CSV. The generated filters restrict fMRIPrep to those sessions.
+    if [[ -n "$SESSIONS_CSV" ]]; then
+        echo "  generating per-subject BIDS filters in ${filterdir} from ${SESSIONS_CSV}"
+        if ! subid_list="$(python "$HERE/make_bids_filters.py" --sessions-csv "$SESSIONS_CSV" --filter-dir "$filterdir")"; then
+            echo "[run_fmriprep] Failed to build BIDS filters from $SESSIONS_CSV" >&2
+            exit 1
+        fi
+        while IFS= read -r subid; do
+            [[ -n "$subid" ]] && maybe_add "$subid"
+        done <<< "$subid_list"
+    fi
     # Inline subjects (space-separated).
     if [[ -n "$SUBJECTS_INLINE" ]]; then
         for tok in $SUBJECTS_INLINE; do
@@ -289,11 +316,19 @@ mkdir -p "\$freesurfer_dir"
 
 donefile="${donedir}/\${subid}.done"
 
+# Use a per-subject BIDS filter if one was generated (--sessions-csv runs),
+# so fMRIPrep only processes the requested sessions for this subject.
+bids_filter_arg=""
+if [ -f "${filterdir}/\${subid}_filter.json" ]; then
+  bids_filter_arg="--bids-filter-file /filters/\${subid}_filter.json"
+  echo "Using BIDS filter ${filterdir}/\${subid}_filter.json"
+fi
 
 # 4. Run fMRIPrep
 apptainer run \\
   --cleanenv \\
   --bind ${idir}:/data:ro \\
+  --bind ${filterdir}:/filters:ro \\
   --bind ${deriv_root}:/out \\
   --bind ${fs_license}:/license.txt:ro \\
   --bind ${TEMPLATEFLOW_HOST_HOME}:/opt/templateflow \\
@@ -304,6 +339,7 @@ apptainer run \\
   /out \\
   participant \\
   --participant-label \${subid} \\
+  \${bids_filter_arg} \\
   --force syn-sdc \\
   --ignore fieldmaps \\
   --subject-anatomical-reference sessionwise \\

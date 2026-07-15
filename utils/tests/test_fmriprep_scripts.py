@@ -7,6 +7,9 @@ These mirror the MRIQC script tests but target:
 
 from __future__ import annotations
 
+import csv
+import importlib.util
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -15,6 +18,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FMRIPREP_DIR = REPO_ROOT / "s7_fmriprep"
+
+_mbf_spec = importlib.util.spec_from_file_location(
+    "make_bids_filters", FMRIPREP_DIR / "make_bids_filters.py")
+mbf = importlib.util.module_from_spec(_mbf_spec)
+_mbf_spec.loader.exec_module(mbf)  # type: ignore[union-attr]
 
 
 def _setup_stub_binaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -200,6 +208,64 @@ def test_run_fmriprep_subject_list_and_ignore_done(tmp_path: Path, monkeypatch: 
                         capture_output=True, text=True)
     assert r2.returncode == 0, r2.stderr
     assert set(_queued_subjects(results)) == {"sub-ADNI002S0413", "sub-ADNI130S1234"}
+
+
+def _write_sessions_csv(path: Path, rows) -> None:
+    """rows: (SUBJECT_ID, VISCODE); mirrors the ADNI Philips-sessions export."""
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["VISCODE", "SCANDATE", "SERIES_ID", "IMAGE_ID", "SUBJECT_ID"])
+        for sub, vis in rows:
+            w.writerow([vis, "2012-05-15", "150694", "304790", sub])
+
+
+def test_make_bids_filters_writes_per_subject_json(tmp_path: Path) -> None:
+    sess = tmp_path / "sessions.csv"
+    _write_sessions_csv(sess, [("002_S_0413", "m72"), ("002_S_0413", "m84"),
+                               ("006_S_0498", "bl")])
+    subj = mbf.load_subject_sessions(sess)
+    assert subj == {"sub-ADNI002S0413": {"M072", "M084"}, "sub-ADNI006S0498": {"M000"}}
+
+    fdir = tmp_path / "filters"
+    subs = mbf.write_filters(subj, fdir, task="rest")
+    assert subs == ["sub-ADNI002S0413", "sub-ADNI006S0498"]
+    flt = json.loads((fdir / "sub-ADNI002S0413_filter.json").read_text())
+    assert flt["bold"]["session"] == ["M072", "M084"]
+    assert flt["bold"]["task"] == "rest"
+    assert flt["t1w"]["session"] == ["M072", "M084"]
+
+
+def test_make_bids_filters_bad_columns_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.csv"
+    bad.write_text("foo,bar\n1,2\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        mbf.load_subject_sessions(bad)
+
+
+def test_run_fmriprep_sessions_csv_generates_filters(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--sessions-csv writes per-subject filters and the array passes them to fMRIPrep."""
+    _setup_stub_binaries(tmp_path, monkeypatch)
+    cfg, results = _list_mode_config(tmp_path)
+    sess = tmp_path / "sessions.csv"
+    _write_sessions_csv(sess, [("002_S_0413", "m72"), ("002_S_0413", "m84")])
+
+    result = subprocess.run(
+        ["bash", str(FMRIPREP_DIR / "run_fmriprep_bids_filter_array_all.sh"),
+         "--config", str(cfg), "--sessions-csv", str(sess), "--ignore-done"],
+        cwd=str(REPO_ROOT), check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    flt = json.loads(
+        (results / "scripts" / "filters" / "sub-ADNI002S0413_filter.json").read_text())
+    assert flt["bold"]["session"] == ["M072", "M084"]
+
+    assert _queued_subjects(results) == ["sub-ADNI002S0413"]
+    slurms = list((results / "scripts").glob("fmriprep_array_*.slurm"))
+    assert slurms, "no array script generated"
+    text = slurms[0].read_text()
+    assert "--bids-filter-file /filters/${subid}_filter.json" in text
+    assert "/filters:ro" in text
 
 
 def test_rerun_fmriprep_creates_rerun_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
