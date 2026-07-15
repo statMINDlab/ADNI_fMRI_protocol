@@ -12,12 +12,38 @@
 #   - containers.freesurfer_license : FreeSurfer license file on the host
 #
 # Optional arguments:
-#   --config PATH   Use a specific YAML config file instead of the default.
+#   --config PATH        Use a specific YAML config file instead of the default.
+#   --subjects "A B ..." Run only these subjects (space-separated ADNI ids or
+#                        BIDS labels), instead of the config heuristics CSV.
+#   --subject-list FILE  Run only the subjects listed one-per-line in FILE.
+#   --subjects-csv FILE  Use FILE instead of paths.fmriprep_heuristics_csv.
+#   --ignore-done        Do not skip subjects that already have a .done marker
+#                        (use this to re-run subjects, e.g. after SliceTiming injection).
+#   --dry-run            Build job scripts without loading Apptainer or submitting.
 #
 set -euo pipefail
 
 CONFIG_PATH=""
 DRY_RUN=0
+SUBJECTS_INLINE=""
+SUBJECT_LIST_FILE=""
+SUBJECTS_CSV_OVERRIDE=""
+IGNORE_DONE=0
+
+usage() {
+  echo "Usage: $0 [--config cfg.yaml] [--subjects \"002_S_0413 130_S_1234\"]" >&2
+  echo "          [--subject-list FILE] [--subjects-csv FILE] [--ignore-done] [--dry-run]" >&2
+}
+
+# Normalize a subject token (002_S_0413 | sub-ADNI002S0413 | ADNI002S0413) to
+# the canonical BIDS subject id used everywhere below: sub-ADNI002S0413.
+normalize_subid() {
+  local t
+  t="$(printf '%s' "$1" | tr -cd '[:alnum:]' | tr '[:lower:]' '[:upper:]')"
+  t="${t#SUB}"
+  t="${t#ADNI}"
+  printf 'sub-ADNI%s' "$t"
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,17 +51,33 @@ while [[ $# -gt 0 ]]; do
       CONFIG_PATH="$2"
       shift 2
       ;;
+    --subjects)
+      SUBJECTS_INLINE="$2"
+      shift 2
+      ;;
+    --subject-list)
+      SUBJECT_LIST_FILE="$2"
+      shift 2
+      ;;
+    --subjects-csv)
+      SUBJECTS_CSV_OVERRIDE="$2"
+      shift 2
+      ;;
+    --ignore-done)
+      IGNORE_DONE=1
+      shift 1
+      ;;
     --dry-run)
       DRY_RUN=1
       shift 1
       ;;
     -h|--help)
-      echo "Usage: $0 [--config /path/to/config.yaml] [--dry-run]" >&2
+      usage
       exit 0
       ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: $0 [--config /path/to/config.yaml] [--dry-run]" >&2
+      usage
       exit 1
       ;;
   esac
@@ -59,13 +101,33 @@ else
   fs_license=$(python -m utils.config_tools containers.freesurfer_license)
 fi
 
-if [[ -z "${idir:-}" || -z "${deriv_root:-}" || -z "${work_root:-}" || -z "${results_root:-}" || -z "${csv_path:-}" ]]; then
+# A CLI subject list (inline or file) takes precedence over any CSV.
+USE_SUBJECT_LIST=0
+if [[ -n "$SUBJECTS_INLINE" || -n "$SUBJECT_LIST_FILE" ]]; then
+  USE_SUBJECT_LIST=1
+fi
+# Allow overriding the heuristics CSV without editing the config.
+if [[ -n "$SUBJECTS_CSV_OVERRIDE" ]]; then
+  csv_path="$SUBJECTS_CSV_OVERRIDE"
+fi
+
+if [[ -z "${idir:-}" || -z "${deriv_root:-}" || -z "${work_root:-}" || -z "${results_root:-}" ]]; then
   echo "[run_fmriprep] One or more required config values are missing or empty" >&2
   echo "  fmriprep.bids_dir           = '${idir:-}'" >&2
   echo "  fmriprep.output_dir         = '${deriv_root:-}'" >&2
   echo "  fmriprep.work_dir           = '${work_root:-}'" >&2
   echo "  paths.fmriprep_results_root = '${results_root:-}'" >&2
-  echo "  paths.fmriprep_heuristics_csv (per-subject) = '${csv_path:-}'" >&2
+  exit 1
+fi
+
+# The subject source is either a CLI list or the (config/override) CSV.
+if [[ "$USE_SUBJECT_LIST" -eq 0 && -z "${csv_path:-}" ]]; then
+  echo "[run_fmriprep] No subjects given: set paths.fmriprep_heuristics_csv, or pass" >&2
+  echo "               --subjects/--subject-list/--subjects-csv." >&2
+  exit 1
+fi
+if [[ -n "$SUBJECT_LIST_FILE" && ! -f "$SUBJECT_LIST_FILE" ]]; then
+  echo "[run_fmriprep] Subject list file not found: $SUBJECT_LIST_FILE" >&2
   exit 1
 fi
 
@@ -74,7 +136,7 @@ if [[ ! -d "$idir" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$csv_path" ]]; then
+if [[ "$USE_SUBJECT_LIST" -eq 0 && ! -f "$csv_path" ]]; then
   echo "[run_fmriprep] Heuristics CSV not found: $csv_path" >&2
   exit 1
 fi
@@ -114,17 +176,49 @@ cat <<EOF > "$idir/dataset_description.json"
 }
 EOF
 
-# 6. Extract subject-session pairs
+# 6. Build the list of subjects to run.
+# maybe_add SUBID: append unless it already has a .done marker (unless --ignore-done).
 pairs=()
-echo "Parsing CSV to create job array..."
-while IFS=, read -r subj_raw v1 _; do
-    [[ -z "$subj_raw" || -z "$v1" ]] && continue
-    subid="sub-ADNI${subj_raw//_/}"
-    donefile="${donedir}/${subid}.done"
-    if [ ! -f "$donefile" ]; then
-        pairs+=("${subid}")
+maybe_add() {
+    local subid="$1"
+    [[ -z "$subid" || "$subid" == "sub-ADNI" ]] && return
+    if [[ "$IGNORE_DONE" -eq 0 && -f "${donedir}/${subid}.done" ]]; then
+        echo "  skipping ${subid} (already has .done; pass --ignore-done to force)" >&2
+        return
     fi
-done < <(tail -n +2 "$csv_path")
+    pairs+=("${subid}")
+}
+
+if [[ "$USE_SUBJECT_LIST" -eq 1 ]]; then
+    echo "Building job array from the provided subject list..."
+    # Inline subjects (space-separated).
+    if [[ -n "$SUBJECTS_INLINE" ]]; then
+        for tok in $SUBJECTS_INLINE; do
+            maybe_add "$(normalize_subid "$tok")"
+        done
+    fi
+    # Subjects from a file (one per line; blanks and # comments ignored).
+    if [[ -n "$SUBJECT_LIST_FILE" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%%#*}"
+            line="$(printf '%s' "$line" | tr -d '[:space:]')"
+            [[ -z "$line" ]] && continue
+            maybe_add "$(normalize_subid "$line")"
+        done < "$SUBJECT_LIST_FILE"
+    fi
+else
+    echo "Parsing CSV to create job array..."
+    while IFS=, read -r subj_raw v1 _; do
+        [[ -z "$subj_raw" || -z "$v1" ]] && continue
+        maybe_add "sub-ADNI${subj_raw//_/}"
+    done < <(tail -n +2 "$csv_path")
+fi
+
+if [[ "${#pairs[@]}" -eq 0 ]]; then
+    echo "[run_fmriprep] No subjects to run (all filtered out or already done)." >&2
+    exit 1
+fi
+echo "  ${#pairs[@]} subject(s) queued."
 
 
 
