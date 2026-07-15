@@ -66,6 +66,33 @@ awk -F'\t' 'NR>1 && $5 ~ /^written/ {print $1}' \
   s4b_slice_timing/slice_timing_report.tsv | sort -u > injected_subjects.txt
 ```
 
+### Re-running specific subject *sessions*
+
+`--subjects`/`--subject-list` run **whole subjects** (all sessions). To re-run
+only specific sessions — for example just the Philips sessions in
+`philips_sessions.csv` that got SliceTiming — use `--sessions-csv`:
+
+```bash
+bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh \
+  --config config/config_adni.yaml \
+  --sessions-csv philips_sessions.csv \
+  --ignore-done
+```
+
+The CSV needs a subject column (`SUBJECT_ID`/`PTID`/`RID`) and a visit column
+(`VISCODE`/`VISCODE2`); the ADNI Philips-sessions export works directly. For each
+subject, the driver runs `make_bids_filters.py` to write a fMRIPrep
+`--bids-filter-file` (into `<results>/scripts/filters/<subid>_filter.json`) that
+restricts BOLD **and** anatomy to the listed sessions, so fMRIPrep processes only
+those sessions instead of the whole subject (`bl` → `ses-M000`, `m72` →
+`ses-M072`). fMRIPrep has no `--session-label`, so this filter file is the
+supported way to scope a run to specific sessions.
+
+Because anatomy is filtered to the same sessions, each listed session must have
+its own T1w (true for the ADNI acquisitions, where T1w is collected each visit).
+`make_bids_filters.py` can also be run on its own to inspect the filters it would
+generate.
+
 ## 7.2) Error analysis and reruns
 
 Large-scale fMRIPrep runs often fail for a subset of subjects due to missing data, resource limits, or configuration issues. This repository includes utilities to help with that loop:
