@@ -397,6 +397,40 @@ def find_bold_sidecars(bids_dir: Path, pattern: str) -> List[Path]:
     return sorted(bids_dir.glob(pattern))
 
 
+def normalize_subject(token: str) -> str:
+    """Reduce a subject token to a comparison key, accepting many spellings.
+
+    ``002_S_0413``, ``sub-ADNI002S0413``, ``ADNI002S0413`` and ``002S0413`` all
+    normalize to ``002S0413``.
+    """
+
+    s = re.sub(r"[^A-Za-z0-9]", "", str(token)).upper()
+    for prefix in ("SUB", "ADNI"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    return s
+
+
+def load_subject_filter(
+    subjects: Optional[Iterable[str]], subject_list: Optional[str]
+) -> Optional[set]:
+    """Build a set of normalized subject keys from inline ids and/or a list file.
+
+    Returns None when no subject restriction was requested (process everything).
+    Blank lines and ``#`` comments in the list file are ignored.
+    """
+
+    tokens: List[str] = list(subjects or [])
+    if subject_list:
+        for line in Path(subject_list).read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                tokens.append(line)
+    if not tokens:
+        return None
+    return {normalize_subject(t) for t in tokens}
+
+
 def write_report(rows: List[Dict[str, Any]], report_path: Path) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", newline="") as f:
@@ -412,8 +446,13 @@ def run(
     metadata_csv: Optional[str] = None,
     report_tsv: Optional[str] = None,
     dry_run: bool = False,
+    subject_keys: Optional[set] = None,
 ) -> Dict[str, int]:
-    """Repair Philips SliceTiming across a BIDS tree. Returns a status->count summary."""
+    """Repair Philips SliceTiming across a BIDS tree. Returns a status->count summary.
+
+    ``subject_keys`` (from ``normalize_subject``) restricts processing to those
+    subjects; None processes every subject in the tree.
+    """
 
     cfg = load_config(config_path)
     opts = Options(cfg)
@@ -439,6 +478,21 @@ def run(
     index = load_metadata_index(csv_path, opts.manufacturers)
     sidecars = find_bold_sidecars(bids_path, opts.bold_json_glob)
 
+    if subject_keys is not None:
+        matched: set = set()
+        kept: List[Path] = []
+        for js in sidecars:
+            sub, _ = path_subject_session(js)
+            key = normalize_subject(sub or "")
+            if key in subject_keys:
+                kept.append(js)
+                matched.add(key)
+        missing = subject_keys - matched
+        if missing:
+            print(f"  [warn] {len(missing)} requested subject(s) had no matching "
+                  f"sidecar: {', '.join(sorted(missing))}")
+        sidecars = kept
+
     rows = [process_sidecar(js, index, opts) for js in sidecars]
     write_report(rows, report_path)
 
@@ -450,7 +504,8 @@ def run(
     print(f"[insert_philips_slicetiming] {mode}")
     print(f"  BIDS dir : {bids_path}")
     print(f"  metadata : {csv_path} ({len(index)} target subject/session groups)")
-    print(f"  sidecars : {len(sidecars)} resting-state BOLD JSONs scanned ({opts.bold_json_glob})")
+    subj_note = f", restricted to {len(subject_keys)} subject(s)" if subject_keys is not None else ""
+    print(f"  sidecars : {len(sidecars)} resting-state BOLD JSONs scanned ({opts.bold_json_glob}{subj_note})")
     for status in sorted(summary):
         print(f"    {status}: {summary[status]}")
     print(f"  report   : {report_path}")
@@ -467,6 +522,11 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Override paths.adni_fmri_metadata_csv.")
     p.add_argument("--report-tsv", default=None,
                    help="Override slice_timing.report_tsv.")
+    p.add_argument("--subjects", nargs="+", default=None, metavar="SUBJECT",
+                   help="Only process these subjects (e.g. 002_S_0413 sub-ADNI130S1234). "
+                        "Accepts ADNI ids or BIDS labels.")
+    p.add_argument("--subject-list", default=None,
+                   help="File with one subject id per line to restrict processing to.")
     p.add_argument("--dry-run", action="store_true",
                    help="Report what would change without modifying any sidecars.")
     return p.parse_args(argv)
@@ -475,12 +535,14 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
     try:
+        subject_keys = load_subject_filter(args.subjects, args.subject_list)
         run(
             config_path=args.config_path,
             bids_dir=args.bids_dir,
             metadata_csv=args.metadata_csv,
             report_tsv=args.report_tsv,
             dry_run=args.dry_run,
+            subject_keys=subject_keys,
         )
     except (FileNotFoundError, ValueError, KeyError) as e:
         print(f"[insert_philips_slicetiming] {e}", file=sys.stderr)

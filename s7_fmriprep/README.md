@@ -33,6 +33,39 @@ bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_ad
 
 This prints, for each CSV chunk, which `fmriprep_array_*.slurm` script would be created and how many array entries it would contain.
 
+### Re-running specific subjects (e.g. after SliceTiming injection)
+
+By default the driver reads subjects from `paths.fmriprep_heuristics_csv`. To
+re-run just a handful of subjects — such as the Philips scans repaired in Step 4b
+— give it a subject list on the command line instead, with no config edits:
+
+```bash
+# inline list:
+bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh \
+  --config config/config_adni.yaml \
+  --subjects "002_S_0413 130_S_1234" \
+  --ignore-done
+
+# or a file, one subject per line (ADNI ids or BIDS labels both work):
+bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh \
+  --config config/config_adni.yaml \
+  --subject-list injected_subjects.txt \
+  --ignore-done
+```
+
+- `--ignore-done` is important for re-runs: without it, subjects that already
+  have a `.done` marker from a previous run are skipped.
+- `--subjects-csv FILE` uses a different heuristics CSV than the config one.
+- Add `--dry-run` first to see exactly which subjects would be queued.
+
+To build the subject list straight from the Step-4b report (only the scans that
+actually got SliceTiming written):
+
+```bash
+awk -F'\t' 'NR>1 && $5 ~ /^written/ {print $1}' \
+  s4b_slice_timing/slice_timing_report.tsv | sort -u > injected_subjects.txt
+```
+
 ## 7.2) Error analysis and reruns
 
 Large-scale fMRIPrep runs often fail for a subset of subjects due to missing data, resource limits, or configuration issues. This repository includes utilities to help with that loop:

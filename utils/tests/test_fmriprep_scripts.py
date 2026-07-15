@@ -124,6 +124,84 @@ def test_run_fmriprep_errors_when_bids_root_missing(tmp_path: Path, monkeypatch:
     assert "[run_fmriprep] BIDS root does not exist:" in result.stderr
 
 
+def _list_mode_config(tmp_path: Path) -> tuple:
+    """A minimal valid config for the subject-list path (no CSV needed)."""
+    bids = tmp_path / "bids"
+    (bids / "sub-ADNI002S0413" / "ses-M000" / "func").mkdir(parents=True)
+    results = tmp_path / "results"
+    cfg = tmp_path / "config_list.yaml"
+    cfg.write_text(
+        """
+        fmriprep:
+          bids_dir: {bids}
+          output_dir: {out}
+          work_dir: {work}
+        paths:
+          fmriprep_results_root: {results}
+          fmriprep_heuristics_csv: ""
+        containers:
+          fmriprep_image: ""
+          freesurfer_license: ""
+        """.format(bids=bids, out=tmp_path / "out", work=tmp_path / "work", results=results),
+        encoding="utf-8",
+    )
+    return cfg, results
+
+
+def _queued_subjects(results: Path) -> list:
+    """Read the subject ids the driver wrote to its job-array input files."""
+    subs = []
+    for f in sorted((results / "scripts").glob("job_array_input_part_*")):
+        subs += [ln.strip() for ln in f.read_text().splitlines() if ln.strip()]
+    return subs
+
+
+def test_run_fmriprep_inline_subjects_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--subjects builds the array from the CLI list (mixed spellings), no CSV needed."""
+    _setup_stub_binaries(tmp_path, monkeypatch)
+    cfg, results = _list_mode_config(tmp_path)
+
+    result = subprocess.run(
+        ["bash", str(FMRIPREP_DIR / "run_fmriprep_bids_filter_array_all.sh"),
+         "--config", str(cfg),
+         "--subjects", "002_S_0413 sub-ADNI130S1234 ADNI077S0999",
+         "--dry-run"],
+        cwd=str(REPO_ROOT), check=False, capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert set(_queued_subjects(results)) == {
+        "sub-ADNI002S0413", "sub-ADNI130S1234", "sub-ADNI077S0999"}
+
+
+def test_run_fmriprep_subject_list_and_ignore_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--subject-list reads a file; .done subjects are skipped unless --ignore-done."""
+    _setup_stub_binaries(tmp_path, monkeypatch)
+    cfg, results = _list_mode_config(tmp_path)
+
+    sub_file = tmp_path / "subs.txt"
+    sub_file.write_text("# rerun these\n002_S_0413\n130_S_1234\n", encoding="utf-8")
+
+    # Mark 002_S_0413 as already done.
+    donedir = results / "scripts" / "done"
+    donedir.mkdir(parents=True)
+    (donedir / "sub-ADNI002S0413.done").write_text("", encoding="utf-8")
+
+    base = ["bash", str(FMRIPREP_DIR / "run_fmriprep_bids_filter_array_all.sh"),
+            "--config", str(cfg), "--subject-list", str(sub_file), "--dry-run"]
+
+    # Without --ignore-done: the done subject is skipped.
+    r1 = subprocess.run(base, cwd=str(REPO_ROOT), check=False, capture_output=True, text=True)
+    assert r1.returncode == 0, r1.stderr
+    assert _queued_subjects(results) == ["sub-ADNI130S1234"]
+
+    # With --ignore-done: both are queued.
+    r2 = subprocess.run(base + ["--ignore-done"], cwd=str(REPO_ROOT), check=False,
+                        capture_output=True, text=True)
+    assert r2.returncode == 0, r2.stderr
+    assert set(_queued_subjects(results)) == {"sub-ADNI002S0413", "sub-ADNI130S1234"}
+
+
 def test_rerun_fmriprep_creates_rerun_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """rerun_fmriprep_bold_create_job_array.sh computes a clean rerun subject list.
 

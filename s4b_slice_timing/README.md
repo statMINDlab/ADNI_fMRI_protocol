@@ -72,6 +72,30 @@ python s4b_slice_timing/insert_philips_slicetiming.py --config config/config_adn
 
 Overrides (handy for spot checks): `--bids-dir`, `--metadata-csv`, `--report-tsv`.
 
+### Run on specific subjects only (no config edits)
+
+Pass the BIDS tree, the slice-timing file, and a subject list directly — nothing
+in `config/config_adni.yaml` needs to change:
+
+```bash
+# inline subjects (ADNI ids or BIDS labels are both accepted):
+python s4b_slice_timing/insert_philips_slicetiming.py \
+  --bids-dir /path/to/rawdata \
+  --metadata-csv /path/to/MAYOADIRL_MRI_FMRI_NFQ_04Oct2025.csv \
+  --subjects 002_S_0413 130_S_1234
+
+# or a file with one subject per line:
+python s4b_slice_timing/insert_philips_slicetiming.py \
+  --bids-dir /path/to/rawdata \
+  --metadata-csv /path/to/MAYOADIRL_MRI_FMRI_NFQ_04Oct2025.csv \
+  --subject-list injected_subjects.txt
+```
+
+`--subjects`/`--subject-list` accept `002_S_0413`, `sub-ADNI002S0413`, or
+`ADNI002S0413` interchangeably. The written scans are recorded (status
+`written`) in the report TSV, which you can turn into the subject list for a
+targeted fMRIPrep re-run (see `s7_fmriprep/README.md`).
+
 ## Report statuses
 
 | status | meaning |

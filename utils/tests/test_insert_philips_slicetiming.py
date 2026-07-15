@@ -218,6 +218,53 @@ def test_skips_non_philips_and_present(tmp_path: Path) -> None:
     assert json.loads(present.read_text())["SliceTiming"] == [9.9]  # untouched
 
 
+def test_normalize_subject_accepts_spellings() -> None:
+    for token in ("002_S_0413", "sub-ADNI002S0413", "ADNI002S0413", "002S0413", "002-s-0413"):
+        assert stc.normalize_subject(token) == "002S0413"
+
+
+def test_subject_filter_restricts_processing(tmp_path: Path) -> None:
+    cfg, bids, csv_path, report = _base_setup(tmp_path)
+    for sub, rid in (("ADNI002S0413", "413"), ("ADNI130S1234", "1234")):
+        js = _bold_json_path(bids, sub, "M000")
+        _write_json(js, {"Manufacturer": "Philips", "RepetitionTime": 1.2, "SeriesNumber": 5})
+    _write_metadata_csv(csv_path, [
+        {"RID": r, "VISCODE2": "bl", "MANUFACTURER": "Philips",
+         "MANUFACTURERSMODELNAME": "Achieva", "REPETITIONTIME": "1200",
+         "SERIESNUMBER": "5", "SLICETIMING": _abs_string(STD_REL)}
+        for r in ("413", "1234")])
+
+    keys = stc.load_subject_filter(["002_S_0413"], None)  # ADNI id spelling
+    summary = stc.run(config_path=str(cfg), bids_dir=str(bids), metadata_csv=str(csv_path),
+                      report_tsv=str(report), subject_keys=keys)
+
+    # Only the requested subject is written; the other is untouched.
+    assert summary.get("written") == 1
+    assert "SliceTiming" in json.loads(_bold_json_path(bids, "ADNI002S0413", "M000").read_text())
+    assert "SliceTiming" not in json.loads(_bold_json_path(bids, "ADNI130S1234", "M000").read_text())
+
+
+def test_subject_filter_from_list_file(tmp_path: Path) -> None:
+    cfg, bids, csv_path, report = _base_setup(tmp_path)
+    _write_json(_bold_json_path(bids, "ADNI002S0413", "M000"),
+                {"Manufacturer": "Philips", "RepetitionTime": 1.2, "SeriesNumber": 5})
+    _write_metadata_csv(csv_path, [
+        {"RID": "413", "VISCODE2": "bl", "MANUFACTURER": "Philips",
+         "MANUFACTURERSMODELNAME": "Achieva", "REPETITIONTIME": "1200",
+         "SERIESNUMBER": "5", "SLICETIMING": _abs_string(STD_REL)}])
+    list_file = tmp_path / "subs.txt"
+    list_file.write_text("# targeted\nsub-ADNI002S0413\n", encoding="utf-8")
+
+    keys = stc.load_subject_filter(None, str(list_file))
+    summary = stc.run(config_path=str(cfg), bids_dir=str(bids), metadata_csv=str(csv_path),
+                      report_tsv=str(report), subject_keys=keys)
+    assert summary.get("written") == 1
+
+
+def test_no_subject_filter_processes_all(tmp_path: Path) -> None:
+    assert stc.load_subject_filter(None, None) is None
+
+
 def test_only_resting_state_bold_is_touched(tmp_path: Path) -> None:
     cfg, bids, csv_path, report = _base_setup(tmp_path)
     # A non-resting BOLD run for the same subject/session should be ignored.
