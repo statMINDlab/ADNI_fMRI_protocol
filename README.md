@@ -1,4 +1,4 @@
-## [Update: 25.06.2026] Issues identified on 15.06.26 have been resolved. If you use the repo and discover any problems, please use issues to let us know. We have discovered another issue in the pipeline regarding slice-time correction of Phillips scans. This issue is expected to be fixed by 30.06.26.
+## [Update: 15.07.2026] Issues identified on 25.06.26 have been resolved. If you use the repo and discover any problems, please use issues to let us know.
 
 # Alzheimer's Disease Neuroimaging Initiative (ADNI) resting-state functional MRI protocol
 
