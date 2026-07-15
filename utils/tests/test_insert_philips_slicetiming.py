@@ -265,6 +265,53 @@ def test_no_subject_filter_processes_all(tmp_path: Path) -> None:
     assert stc.load_subject_filter(None, None) is None
 
 
+def _write_sessions_csv(path: Path, rows: List[tuple]) -> None:
+    """rows: (SUBJECT_ID, VISCODE)."""
+    with path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["VISCODE", "SCANDATE", "SERIES_ID", "IMAGE_ID", "SUBJECT_ID"])
+        for sub, vis in rows:
+            w.writerow([vis, "2012-05-15", "150694", "304790", sub])
+
+
+def test_load_session_filter_maps_viscodes(tmp_path: Path) -> None:
+    sess = tmp_path / "philips_sessions.csv"
+    _write_sessions_csv(sess, [("002_S_0413", "m72"), ("002_S_0413", "bl"),
+                               ("006_S_0498", "m108")])
+    pairs = stc.load_session_filter(str(sess))
+    assert pairs == {("002S0413", "M072"), ("002S0413", "M000"), ("006S0498", "M108")}
+
+
+def test_load_session_filter_bad_columns_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.csv"
+    bad.write_text("foo,bar\n1,2\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        stc.load_session_filter(str(bad))
+
+
+def test_session_filter_restricts_to_listed_pairs(tmp_path: Path) -> None:
+    cfg, bids, csv_path, report = _base_setup(tmp_path)
+    # Same subject, two sessions on disk; only one is in the sessions list.
+    for ses in ("M072", "M084"):
+        _write_json(_bold_json_path(bids, "ADNI002S0413", ses),
+                    {"Manufacturer": "Philips", "RepetitionTime": 1.2, "SeriesNumber": 5})
+    _write_metadata_csv(csv_path, [
+        {"RID": "413", "VISCODE2": vis, "MANUFACTURER": "Philips",
+         "MANUFACTURERSMODELNAME": "Achieva", "REPETITIONTIME": "1200",
+         "SERIESNUMBER": "5", "SLICETIMING": _abs_string(STD_REL)}
+        for vis in ("m72", "m84")])
+
+    sess = tmp_path / "philips_sessions.csv"
+    _write_sessions_csv(sess, [("002_S_0413", "m72")])  # only M072
+
+    summary = stc.run(config_path=str(cfg), bids_dir=str(bids), metadata_csv=str(csv_path),
+                      report_tsv=str(report), session_keys=stc.load_session_filter(str(sess)))
+
+    assert summary.get("written") == 1
+    assert "SliceTiming" in json.loads(_bold_json_path(bids, "ADNI002S0413", "M072").read_text())
+    assert "SliceTiming" not in json.loads(_bold_json_path(bids, "ADNI002S0413", "M084").read_text())
+
+
 def test_only_resting_state_bold_is_touched(tmp_path: Path) -> None:
     cfg, bids, csv_path, report = _base_setup(tmp_path)
     # A non-resting BOLD run for the same subject/session should be ignored.
