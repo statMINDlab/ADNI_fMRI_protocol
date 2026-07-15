@@ -39,7 +39,7 @@ To run both linters locally:
 
 ```bash
 ruff check .
-shellcheck $(git ls-files '*.sh' '*.slurm')
+shellcheck --severity=warning $(git ls-files '*.sh' '*.slurm')
 ```
 
 This will:

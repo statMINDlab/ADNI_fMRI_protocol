@@ -155,7 +155,7 @@ Typical commands from the repository root (with the `env/env_adni.yml` environme
   - `pytest utils/tests/test_config_tools.py::test_cli_outputs_scalar_value`
 - Lint Python and shell/Slurm scripts:
   - `ruff check .`
-  - `shellcheck $(git ls-files '*.sh' '*.slurm')`
+  - `shellcheck --severity=warning $(git ls-files '*.sh' '*.slurm')`
 
 ## High-level architecture
 
