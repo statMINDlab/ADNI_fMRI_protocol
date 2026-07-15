@@ -96,6 +96,37 @@ python s4b_slice_timing/insert_philips_slicetiming.py \
 `written`) in the report TSV, which you can turn into the subject list for a
 targeted fMRIPrep re-run (see `s7_fmriprep/README.md`).
 
+### Target specific subject + session pairs
+
+A subject usually has several sessions and only some are the Philips rs-fMRI
+scans you want to repair, so `--subjects` (whole subject) is often too coarse.
+Pass `--sessions-csv` instead: a CSV listing the exact subject/sessions to touch.
+It needs a subject column (`SUBJECT_ID`, `PTID`, `RID`, or `SUBJECT`) and a visit
+column (`VISCODE` or `VISCODE2`); other columns are ignored, so the ADNI
+Philips-sessions export works directly:
+
+```
+VISCODE,SCANDATE,SERIES_ID,IMAGE_ID,SUBJECT_ID
+m72,2012-05-15,150694,304790,002_S_0413
+m84,2013-05-10,189129,371994,002_S_0413
+...
+```
+
+```bash
+python s4b_slice_timing/insert_philips_slicetiming.py \
+  --bids-dir /path/to/rawdata \
+  --metadata-csv /path/to/MAYOADIRL_MRI_FMRI_NFQ_04Oct2025.csv \
+  --sessions-csv philips_sessions.csv
+```
+
+Visit codes map to BIDS sessions the usual way (`bl` → `ses-M000`, `m72` →
+`ses-M072`). Only sidecars whose `(subject, session)` appears in the CSV are
+processed; any listed pair with no matching sidecar is reported as a warning.
+`--sessions-csv` can be combined with `--subjects` (both restrictions apply).
+Matching to the slice-timing metadata (`--metadata-csv`) is already done on
+subject **and** session (plus series number), so the correct row is picked even
+when a subject has many visits.
+
 ## Report statuses
 
 | status | meaning |

@@ -431,6 +431,52 @@ def load_subject_filter(
     return {normalize_subject(t) for t in tokens}
 
 
+# Column names (lowercased) accepted for the subject and visit fields of a
+# subject+session list such as philips_sessions.csv.
+_SUBJECT_COLS = ("subject_id", "subject", "ptid", "rid", "sub")
+_VISIT_COLS = ("viscode2", "viscode", "visit", "session", "ses")
+
+
+def _session_label(value: str) -> Optional[str]:
+    """Map a visit code (``bl``, ``m72``, ``M072``, ``ses-M072``) to ``M072``."""
+
+    v = re.sub(r"(?i)^ses-", "", str(value).strip())
+    return viscode_to_session(v)
+
+
+def load_session_filter(sessions_csv: Optional[str]) -> Optional[set]:
+    """Build a set of ``(subject_key, session_label)`` pairs from a CSV.
+
+    The CSV needs a subject column (SUBJECT_ID / PTID / RID / SUBJECT) and a visit
+    column (VISCODE / VISCODE2 / SESSION), e.g. the ADNI Philips-sessions export.
+    Returns None when no path is given (no session restriction).
+    """
+
+    if not sessions_csv:
+        return None
+    path = Path(sessions_csv)
+    if not path.is_file():
+        raise FileNotFoundError(f"Sessions CSV not found: {path}")
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        fields = reader.fieldnames or []
+        low = {c.lower(): c for c in fields}
+        sub_col = next((low[c] for c in _SUBJECT_COLS if c in low), None)
+        vis_col = next((low[c] for c in _VISIT_COLS if c in low), None)
+        if sub_col is None or vis_col is None:
+            raise ValueError(
+                f"{path}: need a subject column {_SUBJECT_COLS} and a visit column "
+                f"{_VISIT_COLS}; found {fields}"
+            )
+        pairs: set = set()
+        for row in reader:
+            subj = normalize_subject(row.get(sub_col, ""))
+            ses = _session_label(row.get(vis_col, ""))
+            if subj and ses:
+                pairs.add((subj, ses))
+    return pairs or None
+
+
 def write_report(rows: List[Dict[str, Any]], report_path: Path) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", newline="") as f:
@@ -447,11 +493,14 @@ def run(
     report_tsv: Optional[str] = None,
     dry_run: bool = False,
     subject_keys: Optional[set] = None,
+    session_keys: Optional[set] = None,
 ) -> Dict[str, int]:
     """Repair Philips SliceTiming across a BIDS tree. Returns a status->count summary.
 
     ``subject_keys`` (from ``normalize_subject``) restricts processing to those
-    subjects; None processes every subject in the tree.
+    subjects. ``session_keys`` (``(subject_key, session_label)`` pairs, e.g. from
+    ``load_session_filter``) restricts to specific subject/sessions. Both are ANDed
+    when given; None means no restriction.
     """
 
     cfg = load_config(config_path)
@@ -493,6 +542,23 @@ def run(
                   f"sidecar: {', '.join(sorted(missing))}")
         sidecars = kept
 
+    if session_keys is not None:
+        matched_pairs: set = set()
+        kept = []
+        for js in sidecars:
+            sub, ses = path_subject_session(js)
+            pair = (normalize_subject(sub or ""), re.sub(r"(?i)^ses-", "", ses or ""))
+            if pair in session_keys:
+                kept.append(js)
+                matched_pairs.add(pair)
+        missing_pairs = session_keys - matched_pairs
+        if missing_pairs:
+            preview = ", ".join(f"{s}/{v}" for s, v in sorted(missing_pairs)[:8])
+            more = "" if len(missing_pairs) <= 8 else f" (+{len(missing_pairs) - 8} more)"
+            print(f"  [warn] {len(missing_pairs)} requested subject/session(s) had no "
+                  f"matching sidecar: {preview}{more}")
+        sidecars = kept
+
     rows = [process_sidecar(js, index, opts) for js in sidecars]
     write_report(rows, report_path)
 
@@ -504,7 +570,12 @@ def run(
     print(f"[insert_philips_slicetiming] {mode}")
     print(f"  BIDS dir : {bids_path}")
     print(f"  metadata : {csv_path} ({len(index)} target subject/session groups)")
-    subj_note = f", restricted to {len(subject_keys)} subject(s)" if subject_keys is not None else ""
+    notes = []
+    if subject_keys is not None:
+        notes.append(f"{len(subject_keys)} subject(s)")
+    if session_keys is not None:
+        notes.append(f"{len(session_keys)} subject/session(s)")
+    subj_note = f", restricted to {' & '.join(notes)}" if notes else ""
     print(f"  sidecars : {len(sidecars)} resting-state BOLD JSONs scanned ({opts.bold_json_glob}{subj_note})")
     for status in sorted(summary):
         print(f"    {status}: {summary[status]}")
@@ -527,6 +598,9 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "Accepts ADNI ids or BIDS labels.")
     p.add_argument("--subject-list", default=None,
                    help="File with one subject id per line to restrict processing to.")
+    p.add_argument("--sessions-csv", default=None,
+                   help="CSV with subject + visit columns (e.g. SUBJECT_ID, VISCODE) to "
+                        "restrict processing to specific subject/sessions.")
     p.add_argument("--dry-run", action="store_true",
                    help="Report what would change without modifying any sidecars.")
     return p.parse_args(argv)
@@ -536,6 +610,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
     try:
         subject_keys = load_subject_filter(args.subjects, args.subject_list)
+        session_keys = load_session_filter(args.sessions_csv)
         run(
             config_path=args.config_path,
             bids_dir=args.bids_dir,
@@ -543,6 +618,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             report_tsv=args.report_tsv,
             dry_run=args.dry_run,
             subject_keys=subject_keys,
+            session_keys=session_keys,
         )
     except (FileNotFoundError, ValueError, KeyError) as e:
         print(f"[insert_philips_slicetiming] {e}", file=sys.stderr)
