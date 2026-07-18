@@ -99,6 +99,10 @@ mriqc:
   participant_label_file: "config/mriqc_participant_labels.txt"
   bids_filter_file: "config/mriqc_bids_filter.json"
   no_sub: false
+  # Wide MRIQC group tables (one row per session, one column per IQM) consumed by
+  # s6_mriqc/adni_outlier_pipeline.R. Outputs go under paths.mriqc_results_root.
+  group_bold_tsv: "${ADNI_BASE}/results/mriqc/group_bold_full.tsv"
+  group_t1w_tsv: "${ADNI_BASE}/results/mriqc/group_T1w_full.tsv"
 
 fmriprep:
   bids_dir: "${ADNI_BASE}/rawdata"

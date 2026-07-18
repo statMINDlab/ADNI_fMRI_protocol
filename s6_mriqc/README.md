@@ -72,4 +72,84 @@ sbatch --export=ALL,ADNI_CONFIG=config/config_adni.yaml,MRIQC_DRY_RUN=1 s6_mriqc
 
 The group-level outputs (when not in dry-run) are written under `mriqc.output_dir` as configured in `config/config_adni.yaml`.
 
+## 6.3) Post-MRIQC outlier detection
+
+`s6_mriqc/adni_outlier_pipeline.R` performs the robust, automated outlier
+detection on the MRIQC image-quality metrics (IQMs) and produces the per-session
+QC flags used to include/exclude sessions, plus the supplemental QC figures.
+(It replaces the earlier `outlier_mriqc.R` and `reverse_scale_IQMs.R` scripts:
+the tail-aware threshold below handles "lower-is-worse" metrics directly, so the
+separate reverse-scaling step is no longer needed.)
+
+**Requires R** with the packages `tidyverse`, `rrobot` (`SHASH_out()` /
+`normal_to_SHASH()`), `ggrain`, `shadowtext`, and `patchwork`.
+
+### Inputs
+
+Two wide MRIQC group tables, one row per session, one column per IQM, with the
+id columns `participant_id` and `ses_id`:
+
+- `mriqc.group_bold_tsv` – BOLD IQMs (default `.../results/mriqc/group_bold_full.tsv`).
+- `mriqc.group_t1w_tsv` – T1w IQMs (default `.../results/mriqc/group_T1w_full.tsv`).
+
+These are the aggregated MRIQC metrics (from the group-level step / MRIQC's
+`group_*.tsv`). Like the rest of the pipeline, the paths are read from
+`config/config_adni.yaml` (via `utils.config_tools`); each can be overridden on
+the command line (see *Running* below). Outputs are written to the directory in
+`paths.mriqc_results_root` (override with `--out-dir`).
+
+### Method
+
+For each IQM, a Sinh-Arcsinh (SHASH) distribution is fit to the finite values via
+`rrobot::SHASH_out()`, and the threshold is taken at the ±4 standardized SHASH
+cut on the original data scale (`compute_thresh()`). Each metric is fit on the
+appropriate tail:
+
+- **Upper tail** (flag high values): T1w `cjv`, `efc`, `fwhm_avg`; BOLD `aor`,
+  `aqi`, `efc`, `fd_mean`, `dvars_std`, `fwhm_avg`.
+- **Lower tail** (flag low values): T1w `cnr`, `snr_total`, `tpm_overlap_{csf,gm,wm}`;
+  BOLD `snr`, `tsnr`.
+
+A session is flagged for a group (`excluded_<group>`) if it is an outlier on
+**any** metric in that group; these are combined into `excluded_any` /
+`qc_status_any` (`included` / `excluded`).
+
+### Outputs
+
+- **`all_IQMs_with_QC_flags_clean.tsv`** – one row per session (`sub`, `ses`),
+  all IQM values, per-group `excluded_*` booleans, and `excluded_any` /
+  `qc_status_any`. This is the per-session inclusion table consumed downstream
+  (see Step 8).
+- **`supplemental_outlier_examples.csv`** – two example outlier sessions per
+  metric (one random, one nearest the threshold), for the supplemental figures.
+- **`T1w_IQMs_rainclouds.pdf`** / **`BOLD_IQMs_rainclouds.pdf`** – the raincloud
+  figures. On them: grey = within threshold, red = outlier for that metric, blue
+  = a chosen example session.
+- `s6_mriqc/example_outliers/` holds the report SVGs (carpet plots / recon-all
+  surfaces) for the chosen example sessions alongside their CSV.
+
+All four outputs are written into the output directory
+(`paths.mriqc_results_root`, or `--out-dir`).
+
+### Running
+
+Paths come from `config/config_adni.yaml`, so with the config filled in the
+script runs start-to-finish headless:
+
+```bash
+Rscript s6_mriqc/adni_outlier_pipeline.R --config config/config_adni.yaml
+```
+
+Any path can be overridden without editing the config:
+
+```bash
+Rscript s6_mriqc/adni_outlier_pipeline.R \
+  --bold-tsv /path/to/group_bold_full.tsv \
+  --t1w-tsv  /path/to/group_T1w_full.tsv \
+  --out-dir  /path/to/outputs
+```
+
+The script also previews each raincloud panel, so it can equally be sourced
+interactively in RStudio (set the same arguments, or the config defaults, first).
+
 Now, continue on to Step 7 (`s7_fmriprep/README.md`).
