@@ -38,11 +38,75 @@ library(patchwork)     # combine ggplots with | and plot_layout()
 id_cols <- c("participant_id", "ses_id")
 
 # =========================================================================
+# 0. I/O paths (config-driven, with command-line overrides)
+# =========================================================================
+# No paths are hardcoded. Each input/output is read from config/config_adni.yaml
+# (via utils.config_tools) and can be overridden with a flag:
+#
+#   Rscript s6_mriqc/adni_outlier_pipeline.R \
+#     [--config config/config_adni.yaml] \
+#     [--bold-tsv PATH] [--t1w-tsv PATH] [--out-dir DIR]
+#
+#   --bold-tsv  wide BOLD MRIQC group table   (config: mriqc.group_bold_tsv)
+#   --t1w-tsv   wide T1w  MRIQC group table   (config: mriqc.group_t1w_tsv)
+#   --out-dir   output directory              (config: paths.mriqc_results_root)
+.cli <- commandArgs(trailingOnly = TRUE)
+.get_flag <- function(flag) {
+  i <- match(flag, .cli)
+  if (!is.na(i) && i < length(.cli)) .cli[[i + 1]] else NA_character_
+}
+
+# Repo root: two levels up from this script (so utils.config_tools is importable).
+.script <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+repo_root <- if (length(.script) == 1)
+  normalizePath(file.path(dirname(.script), "..")) else normalizePath(getwd())
+
+config_path <- .get_flag("--config")
+if (is.na(config_path)) config_path <- file.path(repo_root, "config", "config_adni.yaml")
+
+# Read one dotted key from the YAML config via the shared Python helper.
+cfg_get <- function(key) {
+  old <- Sys.getenv("PYTHONPATH")
+  Sys.setenv(PYTHONPATH = paste(repo_root, old, sep = .Platform$path.sep))
+  on.exit(Sys.setenv(PYTHONPATH = old), add = TRUE)
+  val <- tryCatch(
+    suppressWarnings(system2("python", c("-m", "utils.config_tools", key,
+                                         "--config", config_path),
+                             stdout = TRUE, stderr = FALSE)),
+    error = function(e) character(0)
+  )
+  if (length(val) >= 1 && nzchar(val[[1]])) val[[1]] else NA_character_
+}
+
+resolve_path <- function(flag, key, what, must_exist = FALSE) {
+  v <- .get_flag(flag)
+  if (is.na(v)) v <- cfg_get(key)
+  if (is.na(v) || !nzchar(v)) {
+    stop(sprintf("%s not set: pass %s, or set %s in %s",
+                 what, flag, key, config_path), call. = FALSE)
+  }
+  if (must_exist && !file.exists(v)) {
+    stop(sprintf("%s does not exist: %s", what, v), call. = FALSE)
+  }
+  v
+}
+
+bold_tsv <- resolve_path("--bold-tsv", "mriqc.group_bold_tsv", "BOLD group TSV", must_exist = TRUE)
+t1w_tsv  <- resolve_path("--t1w-tsv",  "mriqc.group_t1w_tsv",  "T1w group TSV",  must_exist = TRUE)
+out_dir  <- resolve_path("--out-dir",  "paths.mriqc_results_root", "output directory")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+examples_csv <- file.path(out_dir, "supplemental_outlier_examples.csv")
+qc_flags_tsv <- file.path(out_dir, "all_IQMs_with_QC_flags_clean.tsv")
+t1w_fig_pdf  <- file.path(out_dir, "T1w_IQMs_rainclouds.pdf")
+bold_fig_pdf <- file.path(out_dir, "BOLD_IQMs_rainclouds.pdf")
+
+# =========================================================================
 # 1. Load data
 # =========================================================================
 # Wide MRIQC tables: one row per session, one column per IQM (plus id_cols).
-df_bold <- readr::read_tsv("/Users/saigerutherford/Desktop/ADNI_paper/group_bold_full.tsv")
-df_t1   <- readr::read_tsv("/Users/saigerutherford/Desktop/ADNI_paper/group_T1w_full.tsv")
+df_bold <- readr::read_tsv(bold_tsv)
+df_t1   <- readr::read_tsv(t1w_tsv)
 
 names(df_bold)
 names(df_t1)
@@ -336,7 +400,7 @@ bold_examples <- bind_rows(examples_for_group(df_bold, bold_upper_prep),
 
 all_examples <- bind_rows(t1_examples, bold_examples)
 print(all_examples, n = Inf)
-write_csv(all_examples, "/Users/saigerutherford/Desktop/ADNI_paper/temp/supplemental_outlier_examples.csv")
+write_csv(all_examples, examples_csv)
 
 # =========================================================================
 # 8. Draw the four panels (per-metric red + example blue) and combine
@@ -403,10 +467,10 @@ bold_rain_combined <-
 
 bold_rain_combined
 
-# ggsave("T1w_IQMs_rainclouds.pdf", t1_rain_combined,
-#        width = 12, height = 6, units = "in", bg = "white", limitsize = FALSE)
-# ggsave("BOLD_IQMs_rainclouds.pdf", bold_rain_combined,
-#        width = 12, height = 6, units = "in", bg = "white", limitsize = FALSE)
+ggsave(t1w_fig_pdf, t1_rain_combined,
+       width = 12, height = 6, units = "in", bg = "white", limitsize = FALSE)
+ggsave(bold_fig_pdf, bold_rain_combined,
+       width = 12, height = 6, units = "in", bg = "white", limitsize = FALSE)
 
 # =========================================================================
 # 9. Merge all per-session QC flags + metric values into one wide table
@@ -443,7 +507,4 @@ all_IQMs_with_QC_clean <- all_IQMs_with_QC %>%
   tidyr::drop_na(-all_of(id_cols)) %>%
   dplyr::rename(sub = participant_id, ses = ses_id)
 
-write_tsv(
-  all_IQMs_with_QC_clean,
-  "/Users/saigerutherford/Desktop/all_IQMs_with_QC_flags_clean.tsv"
-)
+write_tsv(all_IQMs_with_QC_clean, qc_flags_tsv)

@@ -420,3 +420,6 @@ s4b_slice_timing/slice_timing_report.tsv
 
 # Local pytest cache
 .pytest_cache/
+
+# macOS Finder metadata
+.DS_Store
