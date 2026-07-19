@@ -8,7 +8,7 @@ This project implements a reproducible pipeline for ADNI 2 / GO / 3 resting-stat
 
 ADNI 1 is excluded (no rs-fMRI) and ADNI 4 is currently out of scope (Clinica support pending).
 
-The top-level README describes the protocol as 8 steps, each with its own subdirectory `s1_…`–`s8_…` and README. Many steps have both manual (LONI web UI, QC decisions) and scripted components.
+The top-level README describes the protocol as a series of numbered steps (`s1_…`–`s9_…`, plus an interstitial `s4b_slice_timing/`), each with its own subdirectory and README. Steps 1–8 produce the preprocessed data and inclusion tables; Step 9 (`s9_clinical_imaging_merge/`) is a downstream merge of the included sessions with ADNI clinical data. Many steps have both manual (LONI web UI, QC decisions) and scripted components.
 
 ## Key commands and entry points
 
@@ -34,6 +34,7 @@ command list. The main scripted entry points are:
 - Step 6 – `bash s6_mriqc/adni_mriqc.slurm --config config/config_adni.yaml` (participant) and `sbatch s6_mriqc/mriqc_group.slurm` (group), then `Rscript s6_mriqc/adni_outlier_pipeline.R --config config/config_adni.yaml` (needs R + tidyverse/rrobot/ggrain) for robust IQM outlier detection / QC flags; reads `mriqc.group_bold_tsv`/`mriqc.group_t1w_tsv`, writes to `paths.mriqc_results_root` (CLI `--bold-tsv`/`--t1w-tsv`/`--out-dir` override).
 - Step 7 – `bash s7_fmriprep/run_fmriprep_bids_filter_array_all.sh --config config/config_adni.yaml` to build fMRIPrep job arrays, with `fmriprep_error_report.py` and `rerun_fmriprep_bold_create_job_array.sh` for the error/rerun loop.
 - Step 8 – `s8_final_qc/summarize_motion_from_confounds.py`, `extract_euler_from_freesurfer.py`, and `finalize_inclusion.py` to produce the inclusion/exclusion tables.
+- Step 9 – `python s9_clinical_imaging_merge/adni_swimlane_clinical.py --imaging included_sessions_merged.csv --adas/--mmse/--cdr/--dxsum/--moca <csv> ...` to merge the included sessions with ADNI clinical assessments (nearest-visit match) and write `merged_sessions.csv` + swimlane/gap Plotly figures. Downstream analysis step; CLI-arg driven (not config-driven), needs pandas/numpy/plotly.
 
 ### Environment and dependencies
 
@@ -183,6 +184,8 @@ The repository is organized around an 8-step pipeline, with a mixture of manual 
    - Cluster-specific job-array orchestration scripts and error-analysis utilities, with Apptainer/Singularity used to run nipreps/fMRIPrep containers against the BIDS dataset and write derivatives to a configured `output_dir`.
 8. **Final QC (`s8_final_qc/`)**
    - Documentation placeholder and integration point for making final inclusion/exclusion decisions based on MRIQC metrics, fMRIPrep reports, and earlier QC outputs; expected to produce `included_sessions.tsv` and related tables referenced under `qc.*` in `config/config_adni.yaml`.
+9. **Clinical–imaging merge (`s9_clinical_imaging_merge/`)**
+   - Downstream (non-preprocessing) step. `adni_swimlane_clinical.py` joins the included sessions to ADNI clinical tables (ADAS/MMSE/CDR/MoCA/DXSUM) by nearest-visit matching and emits `merged_sessions.csv` plus interactive swimlane / gap-histogram / combined Plotly figures. CLI-arg driven, not config-driven.
 
 ### Configuration-driven design
 

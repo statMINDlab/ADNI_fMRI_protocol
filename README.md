@@ -18,12 +18,13 @@ The output of this protocol is high-quality, preprocessed rs-fMRI data in fs-LR 
 6. Run the automated steps directly using the scripts described in each step's `README.md` (`s3_organize/`, `s4_clinica/`, `s4b_slice_timing/`, `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, `s8_final_qc/`).
 7. Inspect QC reports and tables in `s5_post_clinica_qc/`, `s6_mriqc/`, `s7_fmriprep/`, and `s8_final_qc/`.
 8. Use the final inclusion tables (for example, `included_sessions.tsv`) for downstream analyses.
+9. (Optional) Merge the included sessions with ADNI clinical assessments and visualize the imaging↔clinical alignment via `s9_clinical_imaging_merge/`.
 
 All automated steps are driven by `config/config_adni.yaml`. Paths, container images, and most Slurm settings are read at runtime via `utils.config_tools` rather than hardcoded in scripts. Adjust that YAML for your environment instead of editing code where possible.
 
 We attempted to make this process as automated and reproducible as possible. We document the errors we encountered at every step, provide insight on how we troubleshoot and fix the errors, and describe where manual intervention is needed. At some steps, like quality checking, there are decisions that may differ across research groups running this protocol. We attempted to justify and transparently explain all decisions made on inclusion/exclusion based on automated QC metrics. We provide tables describing the sample size at every step, including how many subjects/sessions were dropped after a QC decision was made.
 
-The repo is organized around eight steps (described and linked below). Each step has its own subdirectory with a `README.md` that contains detailed instructions for that step, including the relevant scripts.
+The repo is organized around a series of numbered steps (`s1_…` through `s9_…`, plus an interstitial `s4b_slice_timing/`), described and linked below. Each step has its own subdirectory with a `README.md` that contains detailed instructions for that step, including the relevant scripts. Steps 1–8 produce the preprocessed data and inclusion tables; Step 9 is a downstream step that merges the included sessions with ADNI clinical data.
 
 <div>
 <img src="ADNI_protocol_overview.png" width="900"/>
@@ -61,6 +62,9 @@ flowchart TB
   %% Step 8: Final QC
   S8["Step 8: Final QC (s8_final_qc scripts)"]
 
+  %% Step 9: merge with clinical data (downstream)
+  S9["Step 9: Merge with clinical data (s9_clinical_imaging_merge)"]
+
   %% Data nodes
   RAW_DICOM["Unzipped DICOM tree"]
   BIDS["Clinica BIDS dataset (paths.clinica_bids_dir)"]
@@ -71,6 +75,8 @@ flowchart TB
   MRIQC_DERIV["MRIQC derivatives (paths.mriqc_output_dir)"]
   FMRIPREP_DERIV["fMRIPrep derivatives (paths.fmriprep_output_dir)"]
   FINAL_INCLUDED["included_sessions.tsv (qc.final_inclusion_table)"]
+  ADNI_CLIN["ADNI clinical tables (ADAS/MMSE/CDR/MoCA/DXSUM)"]
+  MERGED["merged_sessions.csv + swimlane/gap figures"]
 
   %% High-level step flow
   S1 --> S2
@@ -86,6 +92,8 @@ flowchart TB
   HEUR_SUBJ --> S7 --> FMRIPREP_DERIV
   MRIQC_DERIV --> S8
   FMRIPREP_DERIV --> S8 --> FINAL_INCLUDED
+  FINAL_INCLUDED --> S9
+  ADNI_CLIN --> S9 --> MERGED
 
   %% Config-driven edges (dashed, unlabeled for clarity)
   CFG -.-> S3
@@ -136,3 +144,11 @@ See `s7_fmriprep/README.md`.
 ## Step 8.) Final Quality Control
 
 See `s8_final_qc/README.md`.
+
+## Step 9.) Merge imaging sessions with clinical data
+
+See `s9_clinical_imaging_merge/README.md`. This downstream step joins the final
+included imaging sessions to the ADNI clinical assessments (ADAS-Cog, MMSE, CDR,
+MoCA, and diagnosis), matching each scan to its nearest clinical visit, and
+writes a merged session table plus interactive swimlane and imaging↔clinical gap
+figures.
