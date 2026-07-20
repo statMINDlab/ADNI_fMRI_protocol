@@ -28,4 +28,6 @@
 
 **4.7.)** Once all Clinica jobs finish running, merge the individual BIDS folders into a single BIDS tree using `merge_individual_clinica.sh`. This script also resolves its input and output paths via `config/config_adni.yaml`.
 
-Now, continue on to Step 5 (`s5_post_clinica_qc/README.md`).
+Next: if your collection includes Philips scans, run Step 4b
+(`s4b_slice_timing/README.md`) on the merged BIDS tree to fill in the missing
+`SliceTiming` before continuing to Step 5 (`s5_post_clinica_qc/README.md`).
