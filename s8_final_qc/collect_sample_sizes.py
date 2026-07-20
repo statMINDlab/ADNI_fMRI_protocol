@@ -113,6 +113,22 @@ def _ids_from_pipeline_df(df) -> Set[BidsId]:
     return {subject_viscode_to_bids(r.Subject_ID, r.VISCODE) for r in df.itertuples()}
 
 
+def mriqc_exclude_series(mq, exclude_col: str):
+    """Return a 0/1 exclude Series from an MRIQC QC-flags table, or None.
+
+    Accepts the configured ``exclude_col`` directly, or derives it from the
+    ``adni_outlier_pipeline.R`` outputs ``excluded_any`` / ``qc_status_any``.
+    """
+    col = exclude_col if exclude_col in mq.columns else (
+        "excluded_any" if "excluded_any" in mq.columns else None)
+    if col is not None:
+        return mq[col].map(
+            lambda v: 1 if str(v).strip().lower() in ("1", "true", "yes", "excluded") else 0)
+    if "qc_status_any" in mq.columns:
+        return (mq["qc_status_any"].astype(str).str.strip().str.lower() == "excluded").astype(int)
+    return None
+
+
 def run_s5_pipeline(mastersheet_csv: Path):
     """Import and run the Step-5 SessionFilterPipeline on the mastersheet."""
     report_dir = REPO_ROOT / "s5_post_clinica_qc" / "create_report"
@@ -180,12 +196,14 @@ def collect_idsets(paths: Dict[str, Path], mriqc_exclude_col: str) -> "Dict[str,
     # MRIQC: sessions with IQMs, and the subset kept after post-MRIQC QC.
     mq = pd.read_csv(paths["mriqc_iqms_table"], low_memory=False)
     mriqc_ids = set(zip(mq["sub"].astype(str), mq["ses"].astype(str), strict=False))
-    if mriqc_exclude_col in mq.columns:
-        kept = mq[mq[mriqc_exclude_col].fillna(0).astype(float) == 0]
+    excl = mriqc_exclude_series(mq, mriqc_exclude_col)
+    if excl is not None:
+        kept = mq[excl == 0]
         mriqc_kept_ids = set(zip(kept["sub"].astype(str), kept["ses"].astype(str), strict=False))
     else:
-        print(f"[collect_sample_sizes] warning: '{mriqc_exclude_col}' not in MRIQC "
-              f"table; treating all MRIQC sessions as kept.", file=sys.stderr)
+        print(f"[collect_sample_sizes] warning: no MRIQC exclude column "
+              f"('{mriqc_exclude_col}'/'excluded_any'/'qc_status_any') in table; "
+              f"treating all MRIQC sessions as kept.", file=sys.stderr)
         mriqc_kept_ids = mriqc_ids
 
     # MRIQC-completed within the Step-5 cohort (drop = failed to run MRIQC).
@@ -266,7 +284,22 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--manifest", default=None)
     p.add_argument("--print-only", action="store_true",
                    help="Print the table without writing the manifest.")
+    p.add_argument("--dump-stage", default=None,
+                   choices=[k for k, *_ in STAGE_META],
+                   help="Also write the sequential (sub, ses) id-set of this stage to --dump-out.")
+    p.add_argument("--dump-out", default=None,
+                   help="Path for the --dump-stage TSV (columns: sub, ses).")
     return p.parse_args(argv)
+
+
+def write_idset(ids: Set[BidsId], path: Path) -> None:
+    """Write a stage's (sub, ses) id-set as a sorted TSV."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        w = csv.writer(f, delimiter="\t")
+        w.writerow(["sub", "ses"])
+        for sub, ses in sorted(ids):
+            w.writerow([sub, ses])
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -294,6 +327,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"[collect_sample_sizes] {e}", file=sys.stderr)
         return 1
+
+    if args.dump_stage:
+        if not args.dump_out:
+            print("[collect_sample_sizes] --dump-stage requires --dump-out", file=sys.stderr)
+            return 1
+        out = Path(args.dump_out)
+        if not out.is_absolute():
+            out = REPO_ROOT / out
+        write_idset(idsets[args.dump_stage], out)
+        print(f"[collect_sample_sizes] wrote {len(idsets[args.dump_stage])} '{args.dump_stage}' "
+              f"sessions -> {out}", file=sys.stderr)
 
     stages = build_stages(idsets)
 

@@ -79,7 +79,16 @@ Inputs:
 
 - `--motion-summary` – path to `motion_summary.tsv` from `summarize_motion_from_confounds.py`.
 - `--euler-summary` – path to `euler_summary.tsv` from `extract_euler_from_freesurfer.py`.
-- `--iqm-outliers` (optional) – MRIQC outlier TSV with columns `[sub, ses, exclude_mriqc]`.
+- `--iqm-outliers` (optional) – MRIQC QC table with `[sub, ses]` plus an exclusion
+  flag. Accepts an `exclude_mriqc` column, or derives it from the
+  `adni_outlier_pipeline.R` outputs `excluded_any` / `qc_status_any`, so the
+  Step-6 QC table can be used directly.
+- `--valid-sessions` (optional) – table with `[sub, ses]` listing the sessions
+  that legitimately reached final QC (e.g. the sequential fMRIPrep survivors from
+  `collect_sample_sizes.py --dump-stage fmriprep`). Motion-summary rows not in
+  this list are **dropped from both output tables**, because they were excluded
+  at an earlier stage rather than at final QC. Use this to keep the final tables
+  sequentially consistent when the pipeline was not run strictly in order.
 - `--fd-mean-thresh` – mean FD_P threshold (default: `0.5` mm).
 - `--fd-prop-thresh` – proportion threshold for FD_P over cutoff (default: `0.30`).
 - `--output-dir` – directory to write final inclusion/exclusion tables.
@@ -87,12 +96,19 @@ Inputs:
 Logic (high level):
 
 - Compute subject-level Euler outliers in a site-specific manner, flagging subjects where the transformed Euler metric exceeds a site-wise threshold.
+- If `--valid-sessions` is given, restrict the motion summary to those sessions first.
 - For each `(sub, ses, task, run)` row in the motion summary:
   - Exclude if `mean_fd_p > fd_mean_thresh`.
   - Exclude if `prop_fd_p_over_thresh > fd_prop_thresh`.
   - Exclude if subject is a sitewise Euler outlier.
   - Exclude if MRIQC flagged the session (`exclude_mriqc == 1`).
 - Aggregate reasons into a semicolon-separated `exclude_reason` field.
+
+> Sequential note: when `--valid-sessions` restricts the universe to the
+> post-MRIQC survivors, no remaining session is an MRIQC outlier, so the final
+> exclusions are Euler + motion only — matching the "Final QC = Euler number,
+> motion" stage in the sample-size table (§8.4). MRIQC exclusions are then
+> attributed to the Post-MRIQC QC stage, not Final QC.
 
 Outputs (tab-separated, written under `--output-dir`):
 

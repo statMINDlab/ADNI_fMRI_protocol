@@ -6,6 +6,30 @@ import pandas as pd
 import numpy as np
 
 
+def mriqc_exclude_column(iqm: pd.DataFrame) -> pd.Series:
+    """Return a 0/1 exclude_mriqc Series from an MRIQC QC-flags table.
+
+    Accepts the column ``exclude_mriqc`` directly, or derives it from the
+    ``adni_outlier_pipeline.R`` outputs ``excluded_any`` (bool) / ``qc_status_any``
+    ("excluded"/"included"), so the R QC table can be used without renaming.
+    """
+    if "exclude_mriqc" in iqm.columns:
+        col = iqm["exclude_mriqc"]
+    elif "excluded_any" in iqm.columns:
+        col = iqm["excluded_any"]
+    elif "qc_status_any" in iqm.columns:
+        return (iqm["qc_status_any"].astype(str).str.strip().str.lower() == "excluded").astype(int)
+    else:
+        raise ValueError(
+            "MRIQC outliers file must have one of: 'exclude_mriqc', 'excluded_any', "
+            "'qc_status_any'.")
+
+    def to01(v) -> int:
+        return 1 if str(v).strip().lower() in ("1", "true", "yes", "excluded") else 0
+
+    return col.map(to01).astype(int)
+
+
 def compute_sitewise_euler_exclusion(euler_df):
     """
     Site-specific Euler-based exclusion.
@@ -30,11 +54,10 @@ def compute_sitewise_euler_exclusion(euler_df):
     site_series = tmp["site"].astype(str).copy()
     subjects = tmp.index.to_numpy()
 
-    # Map site strings to integer indices
-    site_ids = site_series.copy()
-    for i, s in enumerate(site_ids.unique()):
-        site_ids.loc[site_ids == s] = i
-    sites = site_ids.to_numpy(dtype=np.int32)
+    # Map site strings to integer codes (factorize is dtype-safe across pandas
+    # versions; assigning ints into a string-dtype Series fails on newer pandas).
+    codes, _ = pd.factorize(site_series)
+    sites = codes.astype(np.int32)
 
     transformed = np.full_like(euler_nums, np.nan, dtype=np.float32)
     for site in np.unique(sites):
@@ -81,6 +104,17 @@ def main():
         help="Optional MRIQC outlier TSV with at least columns [sub, ses, exclude_mriqc].",
     )
     parser.add_argument(
+        "--valid-sessions",
+        default=None,
+        help=(
+            "Optional table with [sub, ses] listing the sessions that legitimately "
+            "reached final QC (e.g. the sequential fMRIPrep survivors from "
+            "collect_sample_sizes.py --dump-stage fmriprep). Motion-summary rows not "
+            "in this list are dropped from BOTH output tables, since they were "
+            "excluded at an earlier pipeline stage rather than at final QC."
+        ),
+    )
+    parser.add_argument(
         "--fd-mean-thresh",
         type=float,
         default=0.5,
@@ -102,6 +136,22 @@ def main():
     motion = pd.read_csv(args.motion_summary, sep="\t")
     euler = pd.read_csv(args.euler_summary, sep="\t")
 
+    # Restrict to the sequentially-valid universe (sessions that survived every
+    # earlier stage) so final QC only ever includes/excludes sessions that
+    # legitimately reached it. Leaked sessions are dropped, not marked excluded.
+    if args.valid_sessions is not None:
+        sep = "\t" if os.path.splitext(args.valid_sessions)[1].lower() in (".tsv", ".tab") else ","
+        valid = pd.read_csv(args.valid_sessions, sep=sep)
+        for col in ("sub", "ses"):
+            if col not in valid.columns:
+                raise ValueError(f"--valid-sessions file must have a '{col}' column.")
+        valid_ids = valid[["sub", "ses"]].astype(str).drop_duplicates()
+        before = len(motion)
+        motion = motion.astype({"sub": str, "ses": str}).merge(
+            valid_ids, on=["sub", "ses"], how="inner")
+        print(f"Restricted to {len(motion)} of {before} motion rows via --valid-sessions "
+              f"(dropped {before - len(motion)} sessions excluded at an earlier stage).")
+
     # Compute sitewise Euler exclusion at subject level
     euler_flags, euler_removed = compute_sitewise_euler_exclusion(euler)
 
@@ -116,8 +166,7 @@ def main():
     # Optional MRIQC exclusions
     if args.iqm_outliers is not None and os.path.exists(args.iqm_outliers):
         iqm = pd.read_csv(args.iqm_outliers)
-        if "exclude_mriqc" not in iqm.columns:
-            raise ValueError("MRIQC outliers file must have 'exclude_mriqc' column.")
+        iqm["exclude_mriqc"] = mriqc_exclude_column(iqm)
         merged = merged.merge(
             iqm[["sub", "ses", "exclude_mriqc"]],
             on=["sub", "ses"],

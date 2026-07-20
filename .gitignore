@@ -429,3 +429,6 @@ s4b_slice_timing/slice_timing_report.tsv
 
 # Rendered sample-size table (regenerate from sample_size_stages.tsv)
 s8_final_qc/sample_size_table.*
+
+# Derived: sequential fMRIPrep survivor set (regenerate via collect_sample_sizes.py --dump-stage)
+s8_final_qc/valid_fmriprep_sessions.tsv
