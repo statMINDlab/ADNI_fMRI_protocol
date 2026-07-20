@@ -168,7 +168,7 @@ sample_size:
   # Step 5 mastersheet (create_mastersheet output); the pipeline's starting set.
   mastersheet_csv: "s5_post_clinica_qc/create_mastersheet/data/statadni/anchor_plus_dicom_nifti_struct.csv"
   # MRIQC image-quality metrics + QC flags (one row per session MRIQC completed).
-  mriqc_iqms_table: "s8_final_qc/all_IQMs_with_QC_flags.csv"
+  mriqc_iqms_table: "s6_mriqc/all_IQMs_with_QC_flags_clean.csv"
   # Column in the MRIQC table that flags a post-MRIQC-QC exclusion (0 = kept).
   mriqc_exclude_col: "exclude_mriqc"
   # Per-session table proving fMRIPrep completed (motion summary from confounds).

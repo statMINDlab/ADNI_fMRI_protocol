@@ -70,6 +70,30 @@ def test_enforce_sequential_makes_cascade_monotonic() -> None:
     assert eff["final"] == {("s1", "a")}
 
 
+def test_mriqc_exclude_series_column_variants() -> None:
+    import pandas as pd
+    # explicit exclude_mriqc
+    df = pd.DataFrame({"sub": ["a", "b"], "ses": ["x", "y"], "exclude_mriqc": [1, 0]})
+    assert list(csz.mriqc_exclude_series(df, "exclude_mriqc")) == [1, 0]
+    # derive from excluded_any (bool)
+    df = pd.DataFrame({"excluded_any": [True, False]})
+    assert list(csz.mriqc_exclude_series(df, "exclude_mriqc")) == [1, 0]
+    # derive from qc_status_any
+    df = pd.DataFrame({"qc_status_any": ["excluded", "included"]})
+    assert list(csz.mriqc_exclude_series(df, "exclude_mriqc")) == [1, 0]
+    # nothing usable -> None
+    df = pd.DataFrame({"foo": [1]})
+    assert csz.mriqc_exclude_series(df, "exclude_mriqc") is None
+
+
+def test_write_idset_roundtrip(tmp_path: Path) -> None:
+    out = tmp_path / "ids.tsv"
+    csz.write_idset({("sub-2", "ses-B"), ("sub-1", "ses-A")}, out)
+    rows = list(csv.reader(out.open(), delimiter="\t"))
+    assert rows[0] == ["sub", "ses"]
+    assert rows[1:] == [["sub-1", "ses-A"], ["sub-2", "ses-B"]]  # sorted
+
+
 def test_ids_from_bids_table_tsv_and_csv(tmp_path: Path) -> None:
     tsv = tmp_path / "sessions.tsv"
     with tsv.open("w", newline="") as f:
