@@ -19,10 +19,11 @@ Stages and their sources (config section ``sample_size``):
   | fMRIPrep         | previous ∩ ``fmriprep_sessions_table`` (fMRIPrep completed)    |
   | Final QC         | previous ∩ ``final_inclusion_table``                          |
 
-Each stage is intersected with the previous one, so the cascade is guaranteed to
-be monotonically non-increasing even if the input tables come from slightly
-different data snapshots (a warning is printed if a table is missing sessions the
-previous stage still had).
+Each stage is chain-intersected with all previous stages (``enforce_sequential``),
+so the cascade is strictly sequential/monotonic even if the pipeline was not run
+in order: a session that reached, say, fMRIPrep without passing post-MRIQC QC is
+removed from fMRIPrep (and later) counts. How many such sessions are removed at
+each stage is reported to stderr.
 
 The counts are written into the manifest (``sample_size.manifest``) that
 ``make_sample_size_table.py`` renders, and the Markdown table is printed.
@@ -132,17 +133,31 @@ def run_s5_pipeline(mastersheet_csv: Path):
 # --------------------------------------------------------------------------- #
 # Build the ordered, monotonic cascade of id-sets
 # --------------------------------------------------------------------------- #
-def _warn_not_subset(prev: Set[BidsId], cur: Set[BidsId], prev_label: str, cur_label: str) -> None:
-    """Warn if `cur` contains sessions absent from `prev` (i.e. counts went up)."""
-    gained = cur - prev
-    if gained:
-        print(
-            f"[collect_sample_sizes] note: {len(gained)} session(s) in '{cur_label}' are "
-            f"not in '{prev_label}'. Counts are not a strict subset -- this is expected if "
-            f"the input tables come from different data snapshots; regenerate all stage "
-            f"tables from one run for an exact cascade.",
-            file=sys.stderr,
-        )
+def enforce_sequential(raw: Dict[str, Set[BidsId]]) -> "Dict[str, Set[BidsId]]":
+    """Chain-intersect stages so each is a strict subset of every earlier stage.
+
+    A session survives to a stage only if it survived all previous stages. This
+    reconciles pipelines that were not run strictly in order: e.g. a session that
+    reached fMRIPrep without passing post-MRIQC QC is removed from the fMRIPrep
+    (and final) counts here, because it should never have advanced. How many such
+    "leaked" sessions are removed at each stage is reported to stderr.
+    """
+    order = [k for k, *_ in STAGE_META]
+    effective: Dict[str, Set[BidsId]] = {}
+    running: Optional[Set[BidsId]] = None
+    for key in order:
+        cur = raw[key]
+        if running is None:
+            running = set(cur)
+        else:
+            leaked = cur - running
+            running = cur & running
+            if leaked:
+                print(f"[collect_sample_sizes] {key}: removed {len(leaked)} session(s) present "
+                      f"in the {key} table but not surviving an earlier stage "
+                      f"(sequential alignment).", file=sys.stderr)
+        effective[key] = set(running)
+    return effective
 
 
 def collect_idsets(paths: Dict[str, Path], mriqc_exclude_col: str) -> "Dict[str, Set[BidsId]]":
@@ -181,23 +196,22 @@ def collect_idsets(paths: Dict[str, Path], mriqc_exclude_col: str) -> "Dict[str,
               f"{n_subjects(after_postclinica) - n_subjects(after_mriqc)} subject(s) in the "
               f"Step-5 output have no MRIQC result (failed to run MRIQC).", file=sys.stderr)
 
-    after_postmriqc = mriqc_kept_ids
     after_fmriprep = ids_from_bids_table(paths["fmriprep_sessions_table"])
     after_final = ids_from_bids_table(paths["final_inclusion_table"])
 
-    idsets = {
+    # Raw per-stage id-sets (each read from its own step's output). These may not
+    # be nested, so enforce_sequential() chain-intersects them into a strict,
+    # sequentially-aligned cascade before the counts are derived.
+    raw = {
         "start": start,
         "clinica": after_clinica,
         "postclinica": after_postclinica,
-        "mriqc": after_mriqc,
-        "postmriqc": after_postmriqc,
+        "mriqc": mriqc_ids,          # all sessions with IQMs; intersected with the cohort below
+        "postmriqc": mriqc_kept_ids,
         "fmriprep": after_fmriprep,
         "final": after_final,
     }
-    order = [k for k, *_ in STAGE_META]
-    for prev_key, cur_key in zip(order, order[1:], strict=False):
-        _warn_not_subset(idsets[prev_key], idsets[cur_key], prev_key, cur_key)
-    return idsets
+    return enforce_sequential(raw)
 
 
 def build_stages(idsets: Dict[str, Set[BidsId]]) -> List[Stage]:

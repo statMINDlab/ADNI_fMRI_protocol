@@ -45,6 +45,31 @@ def test_build_stages_computes_subset_drops() -> None:
     assert stages[3].dropped_str == "0/1"   # postclinica -> mriqc (s1 keeps a session; one session lost)
 
 
+def test_enforce_sequential_makes_cascade_monotonic() -> None:
+    # fMRIPrep/final tables contain a "leaked" session ("s9","z") that never
+    # survived post-MRIQC; enforce_sequential must drop it from those stages.
+    raw = {
+        "start":       {("s1", "a"), ("s1", "b"), ("s2", "a")},
+        "clinica":     {("s1", "a"), ("s1", "b"), ("s2", "a")},
+        "postclinica": {("s1", "a"), ("s1", "b")},
+        "mriqc":       {("s1", "a"), ("s1", "b")},
+        "postmriqc":   {("s1", "a")},
+        "fmriprep":    {("s1", "a"), ("s9", "z")},   # ("s9","z") leaked in
+        "final":       {("s1", "a"), ("s9", "z")},   # leaked here too
+    }
+    eff = csz.enforce_sequential(raw)
+
+    # Each stage is a subset of the previous.
+    order = [k for k, *_ in csz.STAGE_META]
+    for prev, cur in zip(order, order[1:], strict=False):
+        assert eff[cur] <= eff[prev], f"{cur} not a subset of {prev}"
+
+    # The leaked session is gone; only the truly-surviving session remains.
+    assert ("s9", "z") not in eff["fmriprep"]
+    assert eff["fmriprep"] == {("s1", "a")}
+    assert eff["final"] == {("s1", "a")}
+
+
 def test_ids_from_bids_table_tsv_and_csv(tmp_path: Path) -> None:
     tsv = tmp_path / "sessions.tsv"
     with tsv.open("w", newline="") as f:

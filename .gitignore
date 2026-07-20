@@ -423,3 +423,9 @@ s4b_slice_timing/slice_timing_report.tsv
 
 # macOS Finder metadata
 .DS_Store
+
+# R session history
+.Rhistory
+
+# Rendered sample-size table (regenerate from sample_size_stages.tsv)
+s8_final_qc/sample_size_table.*

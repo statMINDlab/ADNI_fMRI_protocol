@@ -1,8 +1,8 @@
 stage	folder	description	count_from	subjects	sessions
 Unzip & organize DICOMs	s3_organize/	Clean directory tree; check integrity		1153	2893
-BIDS-convert via Clinica	s4_clinica/	NIfTI + JSON + sidecars		1116	2683
+BIDS-convert via Clinica	s4_clinica/	NIfTI + JSON + sidecars		1125	2683
 Post-Clinica QC	s5_post_clinica_qc/	TR/coverage/duration checks		1105	2621
-MRIQC	s6_mriqc/	All IQMs present		1093	2611
-Post-MRIQC QC	s6_mriqc/	Robust outlier detection		1028	2375
-fMRIPrep	s7_fmriprep/	Volumetric, surface, grayordinates outputs		979	2248
-Final QC	s8_final_qc/	Euler number, motion, >=5 min usable data		913	2026
+MRIQC	s6_mriqc/	All IQMs present		1093	2575
+Post-MRIQC QC	s6_mriqc/	Robust outlier detection		1028	2344
+fMRIPrep	s7_fmriprep/	Volumetric, surface, grayordinates outputs		911	1991
+Final QC	s8_final_qc/	Euler number, motion, >=5 min usable data		904	1979
