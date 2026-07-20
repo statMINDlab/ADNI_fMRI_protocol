@@ -22,6 +22,17 @@ The output of this protocol is high-quality, preprocessed rs-fMRI data in fs-LR 
 
 All automated steps are driven by `config/config_adni.yaml`. Paths, container images, and most Slurm settings are read at runtime via `utils.config_tools` rather than hardcoded in scripts. Adjust that YAML for your environment instead of editing code where possible.
 
+## Requirements
+
+- **ADNI access** — a LONI IDA account with an approved Data Use Agreement (Step 1).
+- **Python (main)** — `env/env_adni.yml` (Python 3.11 + scientific stack, PyYAML, pytest); used for the utilities, QC/analysis scripts, and tests. A `pip`-only equivalent is in `requirements.txt`.
+- **Python (Clinica)** — `env/env_clinica.yml` (Python 3.10 + `dcm2niix` + `clinica`) for Step 4 DICOM→BIDS conversion.
+- **R** — Step 6 outlier detection (`s6_mriqc/adni_outlier_pipeline.R`) needs `tidyverse`, `rrobot`, `ggrain`, `shadowtext`, `patchwork`.
+- **Containers** — Apptainer/Singularity images for MRIQC (Step 6) and fMRIPrep (Step 7), plus a FreeSurfer license file. Paths are set under `containers.*` in the config.
+- **HPC** — Steps 4, 6, and 7 are written for a Slurm cluster; the drivers generate job-array scripts. Scheduler settings live under `hpc.*` in the config.
+
+See `CONTRIBUTING.md` for the dev/test setup and `TROUBLESHOOTING.md` for the errors we hit at each step.
+
 We attempted to make this process as automated and reproducible as possible. We document the errors we encountered at every step, provide insight on how we troubleshoot and fix the errors, and describe where manual intervention is needed. At some steps, like quality checking, there are decisions that may differ across research groups running this protocol. We attempted to justify and transparently explain all decisions made on inclusion/exclusion based on automated QC metrics. We provide tables describing the sample size at every step, including how many subjects/sessions were dropped after a QC decision was made.
 
 The repo is organized around a series of numbered steps (`s1_…` through `s9_…`, plus an interstitial `s4b_slice_timing/`), described and linked below. Each step has its own subdirectory with a `README.md` that contains detailed instructions for that step, including the relevant scripts. Steps 1–8 produce the preprocessed data and inclusion tables; Step 9 is a downstream step that merges the included sessions with ADNI clinical data.
@@ -115,11 +126,15 @@ See `s2_download/README.md`.
 
 ## Step 3.) Unzip, organize, and QC download
 
-See `s3_organize/README.md`.
+See `s3_organize/README.md`. Unzip the LONI archives, build an inventory of the
+DICOM directory tree, reconcile it against the image-collection download list,
+and produce the subject list for conversion.
 
 ## Step 4.) Run Clinica (DICOM→NIfTI and BIDS-ify)
 
-See `s4_clinica/README.md`.
+See `s4_clinica/README.md`. Convert DICOM→NIfTI and organize into BIDS with
+Clinica, run per-subject as parallel Slurm jobs, then merge the per-subject
+outputs into a single BIDS tree.
 
 ## Step 4b.) Insert SliceTiming into Philips scans
 
@@ -131,19 +146,27 @@ exists and before Step 5.
 
 ## Step 5.) Post-Clinica Quality Control
 
-See `s5_post_clinica_qc/README.md`.
+See `s5_post_clinica_qc/README.md`. Assemble a per-session master sheet from the
+DICOM/NIfTI/JSON headers, then apply session heuristics (TR, coverage, duration,
+missing data, …) to decide which sessions proceed to MRIQC and fMRIPrep.
 
 ## Step 6.) MRIQC
 
-See `s6_mriqc/README.md`.
+See `s6_mriqc/README.md`. Run MRIQC (participant- and group-level) to compute
+image-quality metrics, then robust, tail-aware outlier detection on the IQMs to
+flag sessions for exclusion.
 
 ## Step 7.) fMRIPrep
 
-See `s7_fmriprep/README.md`.
+See `s7_fmriprep/README.md`. Preprocess the BOLD data with fMRIPrep via Slurm job
+arrays (volumetric, surface, and fs-LR 91k grayordinate outputs), with an
+error-analysis and rerun loop for large runs.
 
 ## Step 8.) Final Quality Control
 
-See `s8_final_qc/README.md`.
+See `s8_final_qc/README.md`. Combine motion (framewise displacement), FreeSurfer
+Euler numbers, and MRIQC outlier flags into the final inclusion/exclusion tables,
+plus a per-stage sample-size table.
 
 ## Step 9.) Merge imaging sessions with clinical data
 
