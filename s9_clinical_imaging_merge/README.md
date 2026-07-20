@@ -29,9 +29,19 @@ the manuscript figures); it is not part of the preprocessing that feeds fMRIPrep
 ## Inputs
 
 - `--imaging` (**required**) – the Step-8 inclusion table enriched with scan
-  date and diagnosis (e.g. `included_sessions_merged.csv`). It must contain the
+  date and diagnosis (`included_sessions_merged.csv`). It must contain the
   columns `Subject_ID`, `ses` (BIDS `ses-M0NN`), `Scan_Date`, and `DIAGNOSIS`
-  (`1`/`2`/`3` → `CN`/`MCI`/`AD`).
+  (`1`/`2`/`3` → `CN`/`MCI`/`AD`). Build it from `s8_final_qc/included_sessions.tsv`
+  with `build_imaging_input.py`, which adds `Subject_ID`/`Scan_Date` from the
+  Step-5 mastersheet and `DIAGNOSIS` from the DXSUM visit nearest each scan:
+
+  ```bash
+  python s9_clinical_imaging_merge/build_imaging_input.py \
+    --included    s8_final_qc/included_sessions.tsv \
+    --mastersheet /path/to/anchor_plus_dicom_nifti_struct.csv \
+    --dxsum       /path/to/DXSUM.csv \
+    --output      s9_clinical_imaging_merge/included_sessions_merged.csv
+  ```
 - ADNI clinical CSVs downloaded from the LONI IDA *Study Data* area, each keyed
   by `PTID` + `VISCODE2` (pass any subset):
 
