@@ -406,11 +406,14 @@ def build_combined_figure(merged: pd.DataFrame,
     # Panel geometry. Plotly derives subplot domains from these, so compute the
     # annotation anchors from the same numbers rather than eyeballing them:
     #   available height = 1 - vspace  ->  row2 spans (0, ROW2_H * avail)
-    #   available width  = 1 - hspace  ->  col2 starts at 0.5*avail + hspace
-    ROW1_H, ROW2_H = 0.70, 0.30
+    #   available width  = 1 - hspace  ->  col2 starts at COL1_W*avail + hspace
+    # Panel B (histogram) is given the wider, shorter share; panel C is a
+    # transposed (metric-per-row) table, so it stays narrow.
+    ROW1_H, ROW2_H = 0.76, 0.24
+    COL1_W, COL2_W = 0.70, 0.30
     VSPACE, HSPACE = 0.10, 0.07
-    row2_top = ROW2_H * (1 - VSPACE)          # top edge of panels B and C
-    col2_left = 0.5 * (1 - HSPACE) + HSPACE   # left edge of panel C
+    row2_top = ROW2_H * (1 - VSPACE)              # top edge of panels B and C
+    col2_left = COL1_W * (1 - HSPACE) + HSPACE    # left edge of panel C
 
     n        = len(subjects)
     y_pos    = {s["sub"]: i for i, s in enumerate(subjects)}
@@ -422,6 +425,7 @@ def build_combined_figure(merged: pd.DataFrame,
         specs=[[{"type": "xy", "colspan": 2}, None],
                [{"type": "xy"}, {"type": "table"}]],
         row_heights=[ROW1_H, ROW2_H],
+        column_widths=[COL1_W, COL2_W],
         vertical_spacing=VSPACE,
         horizontal_spacing=HSPACE,
     )
@@ -525,44 +529,45 @@ def build_combined_figure(merged: pd.DataFrame,
             meta={"kind": "hist", "dx": d}), row=2, col=1)
 
     # ── Panel C: statistics table ────────────────────────────────────────────
-    hdr  = ["Group", "Subjects", "Sessions", "Median", "p75", "p95",
-            "Max", "Same day", "≤1 wk"]
-    cols = [[] for _ in hdr]
-    for d in DX_ORDER:
-        sub_g = gap[gap["group"] == d]
-        a     = sub_g["clin_days_diff"]
-        cols[0].append(d)
-        cols[1].append(f"{sum(1 for s in subjects if s['final_dx'] == d)}")
-        cols[2].append(f"{len(a)}")
-        cols[3].append(f"{a.median():.0f} d")
-        cols[4].append(f"{a.quantile(.75):.0f} d")
-        cols[5].append(f"{a.quantile(.95):.0f} d")
-        cols[6].append(f"{a.max():.0f} d")
-        cols[7].append(f"{a.eq(0).mean()*100:.0f}%")
-        cols[8].append(f"{a.le(7).mean()*100:.0f}%")
-    # overall row
-    a = gap["clin_days_diff"]
-    cols[0].append("All");            cols[1].append(f"{len(subjects)}")
-    cols[2].append(f"{len(a)}");      cols[3].append(f"{a.median():.0f} d")
-    cols[4].append(f"{a.quantile(.75):.0f} d")
-    cols[5].append(f"{a.quantile(.95):.0f} d")
-    cols[6].append(f"{a.max():.0f} d")
-    cols[7].append(f"{a.eq(0).mean()*100:.0f}%")
-    cols[8].append(f"{a.le(7).mean()*100:.0f}%")
+    # Transposed relative to the obvious layout: one row per metric and one
+    # column per group. That keeps the table narrow (5 slim columns instead of
+    # 9 wide ones), leaving the width for the histogram in panel B.
+    metric_names = ["Subjects", "Sessions", "Median", "p75", "p95",
+                    "Max", "Same day", "≤1 wk"]
+    groups = DX_ORDER + ["All"]
 
-    row_cols = [hex_to_rgba(COLORS[d], 0.13) for d in DX_ORDER] + ["rgba(0,0,0,0.05)"]
-    font_cols = [COLORS[d] for d in DX_ORDER] + ["#333333"]
+    def _stats(d: str) -> list:
+        sub_g = gap if d == "All" else gap[gap["group"] == d]
+        a = sub_g["clin_days_diff"]
+        n_subj = (len(subjects) if d == "All"
+                  else sum(1 for s in subjects if s["final_dx"] == d))
+        if len(a) == 0:
+            return [f"{n_subj}", "0"] + ["–"] * 6
+        return [f"{n_subj}", f"{len(a)}", f"{a.median():.0f} d",
+                f"{a.quantile(.75):.0f} d", f"{a.quantile(.95):.0f} d",
+                f"{a.max():.0f} d", f"{a.eq(0).mean() * 100:.0f}%",
+                f"{a.le(7).mean() * 100:.0f}%"]
+
+    cols = [metric_names] + [_stats(d) for d in groups]
+
+    # Tint each group column; the metric-name column stays neutral.
+    col_fills = (["rgba(0,0,0,0.04)"]
+                 + [hex_to_rgba(COLORS[d], 0.13) for d in DX_ORDER]
+                 + ["rgba(0,0,0,0.05)"])
+    hdr_fills = (["#f0f0f0"]
+                 + [hex_to_rgba(COLORS[d], 0.28) for d in DX_ORDER]
+                 + ["#e8e8e8"])
+    hdr_fonts = ["#222"] + [COLORS[d] for d in DX_ORDER] + ["#333333"]
 
     fig.add_trace(go.Table(
-        columnwidth=[52, 62, 62, 56, 44, 44, 46, 62, 50],
-        header=dict(values=[f"<b>{h}</b>" for h in hdr],
-                    fill_color="#f0f0f0", align="center",
-                    font=dict(size=13, color="#222"), height=32),
+        columnwidth=[88, 50, 50, 50, 50],
+        header=dict(values=[f"<b>{h}</b>" for h in [""] + groups],
+                    fill_color=hdr_fills, align="center",
+                    font=dict(size=13, color=hdr_fonts), height=28),
         cells=dict(values=cols,
-                   fill_color=[row_cols] * len(hdr),
-                   align="center", height=30,
-                   font=dict(size=13,
-                             color=[font_cols] + [["#333"] * 4] * (len(hdr) - 1))),
+                   fill_color=col_fills,
+                   align=["left"] + ["center"] * len(groups), height=24,
+                   font=dict(size=12, color=["#222"] + ["#333"] * len(groups))),
     ), row=2, col=2)
 
     # ── shapes / annotations ─────────────────────────────────────────────────
