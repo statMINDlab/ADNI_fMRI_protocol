@@ -344,21 +344,21 @@ def build_gap_histogram(merged: pd.DataFrame,
         fig.add_annotation(
             x=0.99, xref=f"{ax} domain", y=0.92, yref=f"{ay} domain",
             xanchor="right", yanchor="top", showarrow=False,
-            align="right", font=dict(size=13, color="#444"),
+            align="right", font=dict(size=15, color="#444"),
             text=(f"n={len(vals)} &nbsp; median {med:+.0f}d<br>"
                   f"{same_day:.0f}% same day &nbsp; {wk:.0f}% within 1wk"))
 
         fig.update_yaxes(title_text="sessions", row=i, col=1,
-                         title_font=dict(size=15), tickfont=dict(size=13),
+                         title_font=dict(size=17), tickfont=dict(size=15),
                          showgrid=True, gridcolor="rgba(180,180,180,0.25)")
 
     fig.update_xaxes(
         title_text="Clinical visit date minus scan date (days)   "
                    "← clinical first · scan first →",
-        title_font=dict(size=16),
+        title_font=dict(size=18),
         row=len(DX_ORDER), col=1)
     fig.update_xaxes(range=[-max_days, max_days], zeroline=False,
-                     tickfont=dict(size=13),
+                     tickfont=dict(size=15),
                      showgrid=True, gridcolor="rgba(180,180,180,0.25)")
 
     all_vals = df["clin_days_signed"].dropna()
@@ -372,8 +372,8 @@ def build_gap_histogram(merged: pd.DataFrame,
             f"{(all_vals.abs() <= 7).mean()*100:.0f}% within one week{excl}<br>"
             f"solid line = group median &nbsp;·&nbsp; dotted line = same day</sup>"),
             x=0.5, xanchor="center", y=0.985, yanchor="top",
-            font=dict(size=19)),
-        font=dict(size=15),
+            font=dict(size=21)),
+        font=dict(size=17),
         plot_bgcolor="white", paper_bgcolor="white",
         height=800, bargap=0.05, showlegend=False,
         # The 3-line title is drawn inside the top margin, while the first
@@ -406,11 +406,14 @@ def build_combined_figure(merged: pd.DataFrame,
     # Panel geometry. Plotly derives subplot domains from these, so compute the
     # annotation anchors from the same numbers rather than eyeballing them:
     #   available height = 1 - vspace  ->  row2 spans (0, ROW2_H * avail)
-    #   available width  = 1 - hspace  ->  col2 starts at 0.5*avail + hspace
-    ROW1_H, ROW2_H = 0.70, 0.30
+    #   available width  = 1 - hspace  ->  col2 starts at COL1_W*avail + hspace
+    # Panel B (histogram) is given the wider, shorter share; panel C is a
+    # transposed (metric-per-row) table, so it stays narrow.
+    ROW1_H, ROW2_H = 0.76, 0.24
+    COL1_W, COL2_W = 0.70, 0.30
     VSPACE, HSPACE = 0.10, 0.07
-    row2_top = ROW2_H * (1 - VSPACE)          # top edge of panels B and C
-    col2_left = 0.5 * (1 - HSPACE) + HSPACE   # left edge of panel C
+    row2_top = ROW2_H * (1 - VSPACE)              # top edge of panels B and C
+    col2_left = COL1_W * (1 - HSPACE) + HSPACE    # left edge of panel C
 
     n        = len(subjects)
     y_pos    = {s["sub"]: i for i, s in enumerate(subjects)}
@@ -422,6 +425,7 @@ def build_combined_figure(merged: pd.DataFrame,
         specs=[[{"type": "xy", "colspan": 2}, None],
                [{"type": "xy"}, {"type": "table"}]],
         row_heights=[ROW1_H, ROW2_H],
+        column_widths=[COL1_W, COL2_W],
         vertical_spacing=VSPACE,
         horizontal_spacing=HSPACE,
     )
@@ -525,44 +529,45 @@ def build_combined_figure(merged: pd.DataFrame,
             meta={"kind": "hist", "dx": d}), row=2, col=1)
 
     # ── Panel C: statistics table ────────────────────────────────────────────
-    hdr  = ["Group", "Subjects", "Sessions", "Median", "p75", "p95",
-            "Max", "Same day", "≤1 wk"]
-    cols = [[] for _ in hdr]
-    for d in DX_ORDER:
-        sub_g = gap[gap["group"] == d]
-        a     = sub_g["clin_days_diff"]
-        cols[0].append(d)
-        cols[1].append(f"{sum(1 for s in subjects if s['final_dx'] == d)}")
-        cols[2].append(f"{len(a)}")
-        cols[3].append(f"{a.median():.0f} d")
-        cols[4].append(f"{a.quantile(.75):.0f} d")
-        cols[5].append(f"{a.quantile(.95):.0f} d")
-        cols[6].append(f"{a.max():.0f} d")
-        cols[7].append(f"{a.eq(0).mean()*100:.0f}%")
-        cols[8].append(f"{a.le(7).mean()*100:.0f}%")
-    # overall row
-    a = gap["clin_days_diff"]
-    cols[0].append("All");            cols[1].append(f"{len(subjects)}")
-    cols[2].append(f"{len(a)}");      cols[3].append(f"{a.median():.0f} d")
-    cols[4].append(f"{a.quantile(.75):.0f} d")
-    cols[5].append(f"{a.quantile(.95):.0f} d")
-    cols[6].append(f"{a.max():.0f} d")
-    cols[7].append(f"{a.eq(0).mean()*100:.0f}%")
-    cols[8].append(f"{a.le(7).mean()*100:.0f}%")
+    # Transposed relative to the obvious layout: one row per metric and one
+    # column per group. That keeps the table narrow (5 slim columns instead of
+    # 9 wide ones), leaving the width for the histogram in panel B.
+    metric_names = ["Subjects", "Sessions", "Median", "p75", "p95",
+                    "Max", "Same day", "≤1 wk"]
+    groups = DX_ORDER + ["All"]
 
-    row_cols = [hex_to_rgba(COLORS[d], 0.13) for d in DX_ORDER] + ["rgba(0,0,0,0.05)"]
-    font_cols = [COLORS[d] for d in DX_ORDER] + ["#333333"]
+    def _stats(d: str) -> list:
+        sub_g = gap if d == "All" else gap[gap["group"] == d]
+        a = sub_g["clin_days_diff"]
+        n_subj = (len(subjects) if d == "All"
+                  else sum(1 for s in subjects if s["final_dx"] == d))
+        if len(a) == 0:
+            return [f"{n_subj}", "0"] + ["–"] * 6
+        return [f"{n_subj}", f"{len(a)}", f"{a.median():.0f} d",
+                f"{a.quantile(.75):.0f} d", f"{a.quantile(.95):.0f} d",
+                f"{a.max():.0f} d", f"{a.eq(0).mean() * 100:.0f}%",
+                f"{a.le(7).mean() * 100:.0f}%"]
+
+    cols = [metric_names] + [_stats(d) for d in groups]
+
+    # Tint each group column; the metric-name column stays neutral.
+    col_fills = (["rgba(0,0,0,0.04)"]
+                 + [hex_to_rgba(COLORS[d], 0.13) for d in DX_ORDER]
+                 + ["rgba(0,0,0,0.05)"])
+    hdr_fills = (["#f0f0f0"]
+                 + [hex_to_rgba(COLORS[d], 0.28) for d in DX_ORDER]
+                 + ["#e8e8e8"])
+    hdr_fonts = ["#222"] + [COLORS[d] for d in DX_ORDER] + ["#333333"]
 
     fig.add_trace(go.Table(
-        columnwidth=[52, 62, 62, 56, 44, 44, 46, 62, 50],
-        header=dict(values=[f"<b>{h}</b>" for h in hdr],
-                    fill_color="#f0f0f0", align="center",
-                    font=dict(size=13, color="#222"), height=32),
+        columnwidth=[88, 50, 50, 50, 50],
+        header=dict(values=[f"<b>{h}</b>" for h in [""] + groups],
+                    fill_color=hdr_fills, align="center",
+                    font=dict(size=15, color=hdr_fonts), height=30),
         cells=dict(values=cols,
-                   fill_color=[row_cols] * len(hdr),
-                   align="center", height=30,
-                   font=dict(size=13,
-                             color=[font_cols] + [["#333"] * 4] * (len(hdr) - 1))),
+                   fill_color=col_fills,
+                   align=["left"] + ["center"] * len(groups), height=26,
+                   font=dict(size=14, color=["#222"] + ["#333"] * len(groups))),
     ), row=2, col=2)
 
     # ── shapes / annotations ─────────────────────────────────────────────────
@@ -580,7 +585,7 @@ def build_combined_figure(merged: pd.DataFrame,
                 x=-0.008, xref="x domain", xanchor="right",
                 y=yi, yref="y", yanchor="middle",
                 text=f"<b>{s['final_dx']}</b>",
-                font=dict(color=COLORS.get(s["final_dx"], "#888"), size=15),
+                font=dict(color=COLORS.get(s["final_dx"], "#888"), size=17),
                 showarrow=False))
             prev = s["final_dx"]
 
@@ -597,7 +602,7 @@ def build_combined_figure(merged: pd.DataFrame,
             x=px, y=py, xref="paper", yref="paper",
             xanchor="right", yanchor="bottom",
             text=f"<b>{letter}</b>", showarrow=False,
-            font=dict(size=24, color="#222")))
+            font=dict(size=26, color="#222")))
 
     # panel sub-headings, left-aligned just right of each letter
     for text, px, py in [
@@ -607,7 +612,7 @@ def build_combined_figure(merged: pd.DataFrame,
         annotations.append(dict(
             x=px, y=py, xref="paper", yref="paper",
             xanchor="left", yanchor="bottom", showarrow=False,
-            text=text, font=dict(size=16, color="#444")))
+            text=text, font=dict(size=18, color="#444")))
 
     # ── layout ───────────────────────────────────────────────────────────────
     n_img     = len(merged)
@@ -619,19 +624,19 @@ def build_combined_figure(merged: pd.DataFrame,
     y_pad = max(6.0, n * 0.012)
 
     fig.update_xaxes(title_text="Visit date", type="date",
-                     title_font=dict(size=16), tickfont=dict(size=13),
+                     title_font=dict(size=18), tickfont=dict(size=15),
                      showgrid=True, gridcolor="rgba(180,180,180,0.25)",
                      row=1, col=1)
     fig.update_yaxes(range=[-y_pad, n - 1 + y_pad], showticklabels=False,
                      showgrid=False, zeroline=False, row=1, col=1)
 
-    fig.update_xaxes(title_text="Clinical minus scan date (days)",
+    fig.update_xaxes(title_text="Clinical date minus scan date (days)",
                      range=[-max_days, max_days],
-                     title_font=dict(size=16), tickfont=dict(size=13),
+                     title_font=dict(size=18), tickfont=dict(size=15),
                      showgrid=True, gridcolor="rgba(180,180,180,0.25)",
                      row=2, col=1)
     fig.update_yaxes(title_text="sessions",
-                     title_font=dict(size=15), tickfont=dict(size=13),
+                     title_font=dict(size=17), tickfont=dict(size=15),
                      showgrid=True, gridcolor="rgba(180,180,180,0.25)",
                      row=2, col=1)
 
@@ -644,13 +649,13 @@ def build_combined_figure(merged: pd.DataFrame,
             + (f" &nbsp;·&nbsp; {n_imp} imputed scan dates excluded from B/C"
                if n_imp else "") + "</sup>"),
             x=0.5, xanchor="center", y=0.985, yanchor="top",
-            font=dict(size=20)),
-        font=dict(size=14),
-        hoverlabel=dict(font_size=13),
+            font=dict(size=22)),
+        font=dict(size=16),
+        hoverlabel=dict(font_size=15),
         barmode="overlay",
         legend=dict(orientation="h", yanchor="bottom", y=1.045,
                     xanchor="center", x=0.5,
-                    font=dict(size=13), itemsizing="constant"),
+                    font=dict(size=15), itemsizing="constant"),
         plot_bgcolor="white", paper_bgcolor="white",
         height=max(900, int(n / 0.70) + 340),
         margin=dict(t=170, l=100, r=45, b=70),
@@ -682,7 +687,7 @@ def build_figure(merged: pd.DataFrame, subjects: list) -> go.Figure:
                 x=0, xref="paper", xanchor="right",
                 y=yi, yref="y", yanchor="middle",
                 text=f"<b>{s['final_dx']}</b>",
-                font=dict(color=COLORS.get(s["final_dx"], "#888"), size=16),
+                font=dict(color=COLORS.get(s["final_dx"], "#888"), size=18),
                 showarrow=False))
             prev = s["final_dx"]
 
@@ -821,18 +826,18 @@ def build_figure(merged: pd.DataFrame, subjects: list) -> go.Figure:
             f"visit (median gap {med}d)<br>"
             f"● imaging &nbsp; ◆ clinical &nbsp; ┈ gap between them</sup>"),
             x=0.5, xanchor="center", y=0.985, yanchor="top",
-            font=dict(size=19)),
-        font=dict(size=15),
-        hoverlabel=dict(font_size=14),
+            font=dict(size=21)),
+        font=dict(size=17),
+        hoverlabel=dict(font_size=16),
         xaxis=dict(title="Visit date", type="date",
-                   title_font=dict(size=16), tickfont=dict(size=14),
+                   title_font=dict(size=18), tickfont=dict(size=16),
                    showgrid=True, gridcolor="rgba(180,180,180,0.25)",
                    gridwidth=0.5, zeroline=False),
         yaxis=dict(range=[-y_pad, n - 1 + y_pad], showticklabels=False,
                    showgrid=False, zeroline=False),
         legend=dict(title="Visit type / dx", itemsizing="constant",
-                    tracegroupgap=6, font=dict(size=14),
-                    title_font=dict(size=15)),
+                    tracegroupgap=6, font=dict(size=16),
+                    title_font=dict(size=17)),
         plot_bgcolor="white", paper_bgcolor="white",
         height=fig_height,
         margin=dict(t=150, l=95, r=40, b=80),
@@ -842,7 +847,7 @@ def build_figure(merged: pd.DataFrame, subjects: list) -> go.Figure:
                           x=0.0, xanchor="left", y=1.09, yanchor="top",
                           buttons=buttons, showactive=True,
                           bgcolor="white", bordercolor="#cccccc",
-                          font=dict(size=14))])
+                          font=dict(size=16))])
     return fig
 
 
